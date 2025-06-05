@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Req,
+  UnauthorizedException,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -53,26 +54,12 @@ export class AuthController {
   async create(@Body() data: CreateUserDto) {
     try {
       const name = data.name;
-      const first_name = data.first_name;
-      const last_name = data.last_name;
       const email = data.email;
       const password = data.password;
       const type = data.type;
 
       if (!name) {
         throw new HttpException('Name not provided', HttpStatus.UNAUTHORIZED);
-      }
-      if (!first_name) {
-        throw new HttpException(
-          'First name not provided',
-          HttpStatus.UNAUTHORIZED,
-        );
-      }
-      if (!last_name) {
-        throw new HttpException(
-          'Last name not provided',
-          HttpStatus.UNAUTHORIZED,
-        );
       }
       if (!email) {
         throw new HttpException('Email not provided', HttpStatus.UNAUTHORIZED);
@@ -86,8 +73,6 @@ export class AuthController {
 
       const response = await this.authService.register({
         name: name,
-        first_name: first_name,
-        last_name: last_name,
         email: email,
         password: password,
         type: type,
@@ -135,10 +120,29 @@ export class AuthController {
   @Get('google/redirect')
   @UseGuards(AuthGuard('google'))
   async googleLoginRedirect(@Req() req: Request): Promise<any> {
-    return {
-      statusCode: HttpStatus.OK,
-      data: req.user,
-    };
+    return this.authService.handleGoogleLogin(req.user);
+  }
+
+  @Post('refresh-token')
+  async refreshToken(@Body() body: { refreshToken: string }) {
+    const { refreshToken } = body;
+
+    if (!refreshToken) {
+      throw new UnauthorizedException('Refresh token is required');
+    }
+
+    const user = await this.authService.verifyRefreshToken(refreshToken);
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    const newAccessToken = await this.authService.generateAccessToken(
+      user.id,
+      user.email,
+    );
+
+    return { success: true, access_token: newAccessToken };
   }
 
   // update user

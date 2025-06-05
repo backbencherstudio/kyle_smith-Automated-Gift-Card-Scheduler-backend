@@ -243,15 +243,12 @@ export class AuthService {
 
   async register({
     name,
-    first_name,
-    last_name,
     email,
     password,
     type,
   }: {
     name: string;
-    first_name: string;
-    last_name: string;
+
     email: string;
     password: string;
     type?: string;
@@ -272,8 +269,6 @@ export class AuthService {
 
       const user = await UserRepository.createUser({
         name: name,
-        first_name: first_name,
-        last_name: last_name,
         email: email,
         password: password,
         type: type,
@@ -305,49 +300,186 @@ export class AuthService {
       }
 
       // ----------------------------------------------------
-      // // create otp code
-      // const token = await UcodeRepository.createToken({
-      //   userId: user.data.id,
-      //   isOtp: true,
-      // });
-
-      // // send otp code to email
-      // await this.mailService.sendOtpCodeToEmail({
-      //   email: email,
-      //   name: name,
-      //   otp: token,
-      // });
-
-      // return {
-      //   success: true,
-      //   message: 'We have sent an OTP code to your email',
-      // };
-
-      // ----------------------------------------------------
-
-      // Generate verification token
-      const token = await UcodeRepository.createVerificationToken({
+      // create otp code
+      const token = await UcodeRepository.createToken({
         userId: user.data.id,
-        email: email,
+        isOtp: true,
       });
 
-      // Send verification email with token
-      await this.mailService.sendVerificationLink({
-        email,
-        name: email,
-        token: token.token,
-        type: type,
+      // send otp code to email
+      await this.mailService.sendOtpCodeToEmail({
+        email: email,
+        name: name,
+        otp: token,
       });
 
       return {
         success: true,
-        message: 'We have sent a verification link to your email',
+        message: 'We have sent an OTP code to your email',
       };
+
+      // ----------------------------------------------------
+
+      // // Generate verification token
+      // const token = await UcodeRepository.createVerificationToken({
+      //   userId: user.data.id,
+      //   email: email,
+      // });
+
+      // // Send verification email with token
+      // await this.mailService.sendVerificationLink({
+      //   email,
+      //   name: email,
+      //   token: token.token,
+      //   type: type,
+      // });
+
+      // return {
+      //   success: true,
+      //   message: 'We have sent a verification link to your email',
+      // };
     } catch (error) {
       return {
         success: false,
         message: error.message,
       };
+    }
+  }
+
+  async handleGoogleLogin(user: any) {
+    try {
+      // Check if the user already exists in the database by their email
+      const existingUser = await this.prisma.user.findFirst({
+        where: { email: user.email },
+      });
+
+      if (existingUser) {
+        // If the user exists, link the Google account to the user account
+        await this.linkGoogleAccount(existingUser.id, user);
+        return {
+          success: true,
+          message: 'Successfully logged in with Google',
+          user: existingUser,
+        };
+      } else {
+        // If the user does not exist, create a new user
+        const newUser = await this.createUser(user);
+        return {
+          success: true,
+          message: 'Account created successfully with Google',
+          user: newUser,
+        };
+      }
+    } catch (error) {
+      throw new UnauthorizedException('Google login failed');
+    }
+  }
+
+  private async linkGoogleAccount(userId: string, user: any) {
+    // Step 1: Find the existing account by provider and provider_account_id
+    const existingAccount = await this.prisma.account.findUnique({
+      where: {
+        provider_provider_account_id: {
+          provider: 'google',
+          provider_account_id: user.email,
+        },
+      },
+    });
+
+    // Step 2: If account exists, update it
+    if (existingAccount) {
+      await this.prisma.account.update({
+        where: {
+          provider_provider_account_id: {
+            provider: 'google',
+            provider_account_id: user.email,
+          },
+        },
+        data: {
+          access_token: user.access_token,
+          refresh_token: user.refresh_token,
+        },
+      });
+    } else {
+      // Step 3: If account does not exist, create a new account
+      await this.prisma.account.create({
+        data: {
+          user_id: userId,
+          provider: 'google',
+          provider_account_id: user.email,
+          access_token: user.access_token,
+          refresh_token: user.refresh_token,
+        },
+      });
+    }
+  }
+
+  private async createUser(user: any) {
+    // Create a new user if they do not exist
+    const newUser = await this.prisma.user.create({
+      data: {
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        avatar: user.picture,
+        // other necessary fields
+      },
+    });
+
+    // Link the Google account to the newly created user
+    await this.linkGoogleAccount(newUser.id, user);
+
+    return newUser;
+  }
+
+  async refreshGoogleAccessToken(refreshToken: string): Promise<string> {
+    try {
+      const url = `https://oauth2.googleapis.com/token`;
+      const params = new URLSearchParams({
+        client_id: appConfig().auth.google.app_id,
+        client_secret: appConfig().auth.google.app_secret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      });
+
+      const response = await fetch(url, {
+        method: 'POST',
+        body: params,
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        throw new UnauthorizedException(
+          'Failed to refresh Google access token',
+        );
+      }
+
+      return data.access_token;
+    } catch (error) {
+      throw new UnauthorizedException('Error refreshing token');
+    }
+  }
+
+  async verifyRefreshToken(refreshToken: string): Promise<any> {
+    try {
+      const decoded = this.jwtService.decode(refreshToken) as any;
+
+      if (!decoded || !decoded.userId) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: decoded.userId },
+      });
+
+      if (!user) {
+        throw new UnauthorizedException('User not found');
+      }
+
+      return user;
+    } catch (error) {
+      throw new UnauthorizedException('Invalid refresh token');
     }
   }
 
@@ -733,4 +865,8 @@ export class AuthService {
     }
   }
   // --------- end 2FA ---------
+
+  async generateAccessToken(userId: string, email: string): Promise<string> {
+    return this.jwtService.sign({ userId, email });
+  }
 }

@@ -6,11 +6,9 @@ export class CreateUserDto {
   @ApiProperty()
   name?: string;
 
-  @IsNotEmpty()
   @ApiProperty()
   first_name?: string;
 
-  @IsNotEmpty()
   @ApiProperty()
   last_name?: string;
 

@@ -1,11 +1,60 @@
-<p>Hey <%= name %></p>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html dir="ltr" lang="en">
+<head>
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type" />
+  <meta name="x-apple-disable-message-reformatting" />
+</head>
+<body style="background-color:#f5f5f5;color:#212121;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;">
+  <!-- Hidden preview text -->
+  <div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0;">
+    Verify your email for <%= process.env.APP_NAME %>
+  </div>
 
-<p>
-  This is your otp: <%= otp %>
-</p>
+  <!-- Main container -->
+  <table align="center" width="100%" border="0" cellpadding="0" cellspacing="0" role="presentation" style="max-width:600px;margin:20px auto;">
+    <!-- Header -->
+    <tr>
+      <td style="background-color:#FBC026;padding:25px 0;text-align:center;border-radius:8px 8px 0 0;">
+        <h1 style="color:#fff;margin:0;font-size:24px;font-weight:600;">Verify Your Email</h1>
+      </td>
+    </tr>
 
-<p>
-  Regards,
-  <br />
-  <%= process.env.APP_NAME %>
-</p>
+    <!-- Content -->
+    <tr>
+      <td style="background-color:#ffffff;padding:30px;">
+        <p style="font-size:16px;line-height:1.5;color:#555;margin-top:0;">
+          Hello <%= name %>,<br><br>
+          Thank you for signing up! Please verify your email address by entering this code:
+        </p>
+        
+        <!-- OTP Box -->
+        <table align="center" style="margin:30px auto;background:#f9f9f9;border-radius:8px;padding:20px;text-align:center;width:80%;border:1px dashed #FBC026;">
+          <tr>
+            <td>
+              <p style="font-size:14px;margin:0 0 10px;color:#777;">Your verification code:</p>
+              <p style="font-size:36px;font-weight:bold;margin:0;color:#FBC026;letter-spacing:3px;"><%= otp %></p>
+              <p style="font-size:12px;margin:10px 0 0;color:#999;">(Valid for 10 minutes)</p>
+            </td>
+          </tr>
+        </table>
+
+        <p style="font-size:14px;line-height:1.5;color:#777;text-align:center;">
+          Didn't request this? You can safely ignore this email.
+        </p>
+      </td>
+    </tr>
+
+    <!-- Footer -->
+    <tr>
+      <td style="background-color:#f9f9f9;padding:20px;text-align:center;font-size:14px;color:#777;border-radius:0 0 8px 8px;">
+        <p style="margin:0;">
+          <a href="<%= process.env.APP_URL %>" style="color:#FBC026;text-decoration:none;font-weight:600;"><%= process.env.APP_NAME %></a>
+        </p>
+        <p style="margin:8px 0 0;font-size:12px;">
+          © <%= new Date().getFullYear() %> All rights reserved.
+        </p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
