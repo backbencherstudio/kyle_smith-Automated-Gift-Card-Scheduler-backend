@@ -485,6 +485,83 @@ export class AuthService {
     }
   }
 
+  async handleFacebookLogin(user: any) {
+    try {
+      if (!user || !user.email) {
+        throw new UnauthorizedException('Invalid Facebook profile data');
+      }
+
+      // Check if user exists
+      const existingUser = await this.prisma.user.findFirst({
+        where: { email: user.email },
+      });
+
+      if (existingUser) {
+        // Link Facebook account
+        await this.linkFacebookAccount(existingUser.id, user);
+        return {
+          success: true,
+          message: 'Successfully logged in with Facebook',
+          user: existingUser,
+        };
+      } else {
+        // Create new user
+        const newUser = await this.createUser({
+          email: user.email,
+          first_name: user.firstName,
+          last_name: user.lastName,
+          avatar: user.picture,
+          email_verified_at: new Date(),
+          type: 'user',
+        });
+
+        return {
+          success: true,
+          message: 'Account created successfully with Facebook',
+          user: newUser,
+        };
+      }
+    } catch (error) {
+      console.error('Facebook Login Error:', error);
+      throw new UnauthorizedException('Facebook login failed: ' + error.message);
+    }
+  }
+
+  private async linkFacebookAccount(userId: string, user: any) {
+    try {
+      const existingAccount = await this.prisma.account.findFirst({
+        where: {
+          user_id: userId,
+          provider: 'facebook',
+        },
+      });
+
+      if (existingAccount) {
+        await this.prisma.account.update({
+          where: { id: existingAccount.id },
+          data: {
+            access_token: user.accessToken,
+            refresh_token: user.refreshToken,
+            provider_account_id: user.id,
+          },
+        });
+      } else {
+        await this.prisma.account.create({
+          data: {
+            user_id: userId,
+            provider: 'facebook',
+            provider_account_id: user.id,
+            access_token: user.accessToken,
+            refresh_token: user.refreshToken,
+          },
+        });
+      }
+    } catch (error) {
+      console.error('Link Facebook Account Error:', error);
+      throw new UnauthorizedException('Failed to link Facebook account');
+    }
+  }
+
   async forgotPassword(email) {
     try {
       const user = await UserRepository.exist({

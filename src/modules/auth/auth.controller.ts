@@ -149,6 +149,41 @@ export class AuthController {
     }
   }
 
+  @Get('facebook')
+  @UseGuards(AuthGuard('facebook'))
+  async facebookLogin(): Promise<any> {
+    return HttpStatus.OK;
+  }
+
+
+  @Get('facebook/redirect')
+  @UseGuards(AuthGuard('facebook'))
+  async facebookLoginRedirect(
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<any> {
+    try {
+      const result = await this.authService.handleFacebookLogin(req.user);
+
+      // Generate JWT token
+      const token = await this.authService.generateAccessToken(
+        result.user.id,
+        result.user.email,
+      );
+
+      // Redirect to frontend with token and user data
+      const frontendUrl = appConfig().app.client_app_url || 'http://localhost:3000';
+      const redirectUrl = `${frontendUrl}/auth/facebook/callback?token=${token}&user=${encodeURIComponent(JSON.stringify(result.user))}`;
+
+      return res.redirect(redirectUrl);
+    } catch (error) {
+      const frontendUrl = appConfig().app.client_app_url || 'http://localhost:3000';
+      return res.redirect(
+        `${frontendUrl}/auth/error?message=${encodeURIComponent(error.message)}`,
+      );
+    }
+  }
+
   @Post('refresh-token')
   async refreshToken(@Body() body: { refreshToken: string }) {
     const { refreshToken } = body;
