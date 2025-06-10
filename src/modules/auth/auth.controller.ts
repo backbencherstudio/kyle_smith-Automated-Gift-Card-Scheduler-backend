@@ -11,9 +11,10 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  Res,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { memoryStorage } from 'multer';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthService } from './auth.service';
@@ -119,8 +120,33 @@ export class AuthController {
 
   @Get('google/redirect')
   @UseGuards(AuthGuard('google'))
-  async googleLoginRedirect(@Req() req: Request): Promise<any> {
-    return this.authService.handleGoogleLogin(req.user);
+  async googleLoginRedirect(
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<any> {
+    try {
+      const result = await this.authService.handleGoogleLogin(req.user);
+
+      // Generate JWT token
+      const token = await this.authService.generateAccessToken(
+        result.user.id,
+        result.user.email,
+      );
+
+      // Redirect to frontend with token and user data
+      const frontendUrl =
+        appConfig().app.client_app_url || 'http://localhost:3000';
+      const redirectUrl = `${frontendUrl}/auth/google/callback?token=${token}&user=${encodeURIComponent(JSON.stringify(result.user))}`;
+
+      return res.redirect(redirectUrl);
+    } catch (error) {
+      // Handle error redirect
+      const frontendUrl =
+        appConfig().app.client_app_url || 'http://localhost:3000';
+      return res.redirect(
+        `${frontendUrl}/auth/error?message=${encodeURIComponent(error.message)}`,
+      );
+    }
   }
 
   @Post('refresh-token')

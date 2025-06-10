@@ -396,8 +396,8 @@ export class AuthService {
           },
         },
         data: {
-          access_token: user.access_token,
-          refresh_token: user.refresh_token,
+          access_token: user.accessToken,
+          refresh_token: user.refreshToken,
         },
       });
     } else {
@@ -407,21 +407,23 @@ export class AuthService {
           user_id: userId,
           provider: 'google',
           provider_account_id: user.email,
-          access_token: user.access_token,
-          refresh_token: user.refresh_token,
+          access_token: user.accessToken,
+          refresh_token: user.refreshToken,
         },
       });
     }
   }
 
   private async createUser(user: any) {
+    console.log(user);
     // Create a new user if they do not exist
     const newUser = await this.prisma.user.create({
       data: {
         email: user.email,
-        first_name: user.first_name,
-        last_name: user.last_name,
+        first_name: user.firstName,
+        last_name: user.lastName,
         avatar: user.picture,
+        email_verified_at: new Date(Date.now()),
         // other necessary fields
       },
     });

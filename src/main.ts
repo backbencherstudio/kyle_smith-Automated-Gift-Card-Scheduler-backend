@@ -14,6 +14,7 @@ import { SojebStorage } from './common/lib/Disk/SojebStorage';
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
   'http://localhost:3000',
+  'http://192.168.4.4:3000',
   'https://kzmnn7xiptpk8hxl18hv.lite.vusercontent.net',
   'https://kzmp1lbamr3ub2abo3ep.lite.vusercontent.net',
   'https://*.vusercontent.net',
