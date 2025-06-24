@@ -192,11 +192,11 @@ model GiftCardInventory {
   vendor_id String
   vendor    Vendor @relation(fields: [vendor_id], references: [id])
 
-  card_code     String // Encrypted gift card code
+  card_code      String // Encrypted gift card code
   card_code_hash String?
-  face_value    Decimal // Original card value ($50)
-  purchase_cost Decimal // What client paid ($50)
-  selling_price Decimal // What users pay ($55)
+  face_value     Decimal // Original card value ($50)
+  purchase_cost  Decimal // What client paid ($50)
+  selling_price  Decimal // What users pay ($55)
 
   status        GiftCardStatus @default(AVAILABLE)
   purchase_date DateTime // When client bought it
@@ -285,21 +285,24 @@ model GiftRecipient {
   @@map("gift_recipients")
 }
 
-model InventoryTransaction {
-  id           String            @id @default(cuid())
-  inventory_id String
-  inventory    GiftCardInventory @relation(fields: [inventory_id], references: [id])
+enum InventoryTransactionType {
+  PURCHASE
+  SALE
+  ADJUSTMENT
+}
 
-  transaction_type String // "PURCHASE", "SALE", "ADJUSTMENT"
-  quantity         Int     @default(1)
+model InventoryTransaction {
+  id               String                   @id @default(cuid())
+  inventory_id     String
+  inventory        GiftCardInventory        @relation(fields: [inventory_id], references: [id])
+  transaction_type InventoryTransactionType
+  quantity         Int                      @default(1)
   unit_price       Decimal
   total_amount     Decimal
-
-  user_id String? // For sales transactions
-  user    User?   @relation(fields: [user_id], references: [id])
-
-  notes      String?
-  created_at DateTime @default(now())
+  user_id          String? // For sales transactions
+  user             User?                    @relation(fields: [user_id], references: [id])
+  notes            String?
+  created_at       DateTime                 @default(now())
 
   @@map("inventory_transactions")
 }
