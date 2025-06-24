@@ -6,6 +6,8 @@ import { PaymentTransactionModule } from './payment-transaction/payment-transact
 import { UserModule } from './user/user.module';
 import { NotificationModule } from './notification/notification.module';
 import { ExampleModule } from './example/example.module';
+import { VendorModule } from './vendor/vendor.module';
+import { GiftCardInventoryModule } from './gift-card-inventory/gift-card-inventory.module';
 
 @Module({
   imports: [
@@ -16,6 +18,8 @@ import { ExampleModule } from './example/example.module';
     UserModule,
     NotificationModule,
     ExampleModule,
+    VendorModule,
+    GiftCardInventoryModule,
   ],
 })
 export class AdminModule {}

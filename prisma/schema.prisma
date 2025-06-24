@@ -165,6 +165,13 @@ model RoleUser {
 
 // ==================== GIFT CARD INVENTORY SYSTEM ====================
 
+enum GiftCardStatus {
+  AVAILABLE
+  USED
+  EXPIRED
+  RESERVED
+}
+
 model Vendor {
   id          String   @id @default(cuid())
   name        String // "Amazon", "Walmart", "Target"
@@ -186,11 +193,12 @@ model GiftCardInventory {
   vendor    Vendor @relation(fields: [vendor_id], references: [id])
 
   card_code     String // Encrypted gift card code
+  card_code_hash String?
   face_value    Decimal // Original card value ($50)
   purchase_cost Decimal // What client paid ($50)
   selling_price Decimal // What users pay ($55)
 
-  status        String // "Available", "Used", "Expired", "Reserved"
+  status        GiftCardStatus @default(AVAILABLE)
   purchase_date DateTime // When client bought it
   expiry_date   DateTime? // Card expiration date
 
@@ -203,6 +211,7 @@ model GiftCardInventory {
   inventory_transactions InventoryTransaction[]
   payment_transactions   PaymentTransaction[]
 
+  @@unique([card_code_hash, vendor_id])
   @@map("gift_card_inventory")
 }
 

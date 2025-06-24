@@ -45,6 +45,8 @@
     "class-transformer": "0.5.1",
     "class-validator": "0.14.1",
     "cross-env": "7.0.3",
+    "crypto": "^1.0.1",
+    "csv-parse": "^5.6.0",
     "date-fns": "4.1.0",
     "dayjs": "1.11.13",
     "helmet": "8.1.0",
