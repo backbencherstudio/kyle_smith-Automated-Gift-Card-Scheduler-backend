@@ -8,6 +8,7 @@ import { NotificationModule } from './notification/notification.module';
 import { ExampleModule } from './example/example.module';
 import { VendorModule } from './vendor/vendor.module';
 import { GiftCardInventoryModule } from './gift-card-inventory/gift-card-inventory.module';
+import { InventoryTransactionModule } from './inventory-transaction/inventory-transaction.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { GiftCardInventoryModule } from './gift-card-inventory/gift-card-invento
     ExampleModule,
     VendorModule,
     GiftCardInventoryModule,
+    InventoryTransactionModule,
   ],
 })
 export class AdminModule {}

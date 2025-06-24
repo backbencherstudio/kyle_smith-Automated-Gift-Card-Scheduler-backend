@@ -7,12 +7,13 @@ import * as csv from 'csv-parse/sync';
 import { EncryptionHelper } from 'src/common/helper/encryption.helper';
 import { Prisma } from '@prisma/client';
 import { hashCardCode } from 'src/common/helper/hash.helper';
+import { InventoryTransactionType } from '../inventory-transaction/dto/create-inventory-transaction.dto';
 
 @Injectable()
 export class GiftCardInventoryService {
   constructor(private prisma: PrismaService) {}
 
-  async create(createDto: CreateGiftCardInventoryDto) {
+  async create(createDto: CreateGiftCardInventoryDto, adminUserId: string) {
     try {
       // Check if vendor exists
       const vendor = await this.prisma.vendor.findUnique({
@@ -49,6 +50,20 @@ export class GiftCardInventoryService {
           card_code_hash: cardCodeHash,
         },
       });
+
+      // Automatically create a PURCHASE transaction
+      await this.prisma.inventoryTransaction.create({
+        data: {
+          inventory_id: card.id,
+          transaction_type: InventoryTransactionType.PURCHASE,
+          quantity: 1,
+          unit_price: createDto.purchase_cost,
+          total_amount: createDto.purchase_cost,
+          user_id: adminUserId, // Pass the admin's user ID to this method
+          notes: 'Initial stock purchase',
+        },
+      });
+
       return { success: true, data: card };
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -68,7 +83,7 @@ export class GiftCardInventoryService {
     }
   }
 
-  async bulkUpload(file: Express.Multer.File) {
+  async bulkUpload(file: Express.Multer.File, adminUserId: string) {
     try {
       const records = csv.parse(file.buffer.toString(), {
         columns: true,
@@ -94,6 +109,19 @@ export class GiftCardInventoryService {
           const card = await this.prisma.giftCardInventory.create({
             data: record,
           });
+
+          await this.prisma.inventoryTransaction.create({
+            data: {
+              inventory_id: card.id,
+              transaction_type: InventoryTransactionType.PURCHASE,
+              quantity: 1,
+              unit_price: record.purchase_cost,
+              total_amount: record.purchase_cost,
+              user_id: adminUserId, // Pass this in from controller
+              notes: 'Bulk stock purchase',
+            },
+          });
+
           created.push(card);
         } catch (err) {
           // Optionally collect failed records for reporting

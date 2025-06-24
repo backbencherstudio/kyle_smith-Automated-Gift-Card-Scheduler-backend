@@ -10,6 +10,7 @@ import {
   UseGuards,
   UploadedFile,
   UseInterceptors,
+  Req,
 } from '@nestjs/common';
 import { GiftCardInventoryService } from './gift-card-inventory.service';
 import { CreateGiftCardInventoryDto } from './dto/create-gift-card-inventory.dto';
@@ -25,15 +26,17 @@ export class GiftCardInventoryController {
   constructor(private readonly service: GiftCardInventoryService) {}
 
   @Post()
-  async create(@Body() dto: CreateGiftCardInventoryDto) {
-    return this.service.create(dto);
+  async create(@Body() dto: CreateGiftCardInventoryDto, @Req() req) {
+    const adminUserId = req.user.userId; // Adjust according to your JWT payload
+    return this.service.create(dto, adminUserId);
   }
 
   @Post('bulk-upload')
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file'))
-  async bulkUpload(@UploadedFile() file: Express.Multer.File) {
-    return this.service.bulkUpload(file);
+  async bulkUpload(@UploadedFile() file: Express.Multer.File, @Req() req) {
+    const adminUserId = req.user.userId; // Adjust according to your JWT payload
+    return this.service.bulkUpload(file, adminUserId);
   }
 
   @Get()
