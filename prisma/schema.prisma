@@ -86,9 +86,10 @@ model User {
   payment_transactions PaymentTransaction[]
 
   // New relations for gift system
+  gift_recipients        GiftRecipient[] // For gift recipients
   gift_scheduling        GiftScheduling[]
-  contacts               Contact[]
   inventory_transactions InventoryTransaction[]
+  Contact                Contact[]
 
   @@map("users")
 }
@@ -219,13 +220,13 @@ model Gift {
 }
 
 model GiftScheduling {
-  id         String  @id @default(cuid())
-  user_id    String
-  user       User    @relation(fields: [user_id], references: [id])
-  contact_id String
-  contact    Contact @relation(fields: [contact_id], references: [id])
-  gift_id    String
-  gift       Gift    @relation(fields: [gift_id], references: [id])
+  id           String        @id @default(cuid())
+  user_id      String
+  user         User          @relation(fields: [user_id], references: [id])
+  recipient_id String // Changed from contact_id
+  recipient    GiftRecipient @relation(fields: [recipient_id], references: [id]) // Changed relation
+  gift_id      String
+  gift         Gift          @relation(fields: [gift_id], references: [id])
 
   inventory_id String?
   inventory    GiftCardInventory? @relation(fields: [inventory_id], references: [id])
@@ -243,6 +244,22 @@ model GiftScheduling {
 }
 
 model Contact {
+  id         String   @id @default(cuid())
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now())
+
+  first_name   String
+  last_name    String
+  email        String
+  phone_number String?
+  message      String
+  User         User?   @relation(fields: [userId], references: [id])
+  userId       String?
+
+  @@map("contacts")
+}
+
+model GiftRecipient {
   id            String   @id @default(cuid())
   created_at    DateTime @default(now())
   updated_at    DateTime @default(now())
@@ -256,7 +273,7 @@ model Contact {
 
   gift_scheduling GiftScheduling[]
 
-  @@map("contacts")
+  @@map("gift_recipients")
 }
 
 model InventoryTransaction {

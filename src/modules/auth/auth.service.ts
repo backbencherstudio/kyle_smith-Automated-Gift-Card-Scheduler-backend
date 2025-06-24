@@ -485,7 +485,7 @@ export class AuthService {
     }
   }
 
-  async gitebookLogin(user: any) {
+  async handleFacebookLogin(user: any) {
     try {
       if (!user || !user.email) {
         throw new UnauthorizedException('Invalid Facebook profile data');
@@ -523,7 +523,9 @@ export class AuthService {
       }
     } catch (error) {
       console.error('Facebook Login Error:', error);
-      throw new UnauthorizedException('Facebook login failed: ' + error.message);
+      throw new UnauthorizedException(
+        'Facebook login failed: ' + error.message,
+      );
     }
   }
 
