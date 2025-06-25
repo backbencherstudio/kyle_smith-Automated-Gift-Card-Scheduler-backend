@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Gift Card Delivery</title>
+</head>
+<body>
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>🎁 Your Gift Card is Here!</h2>
+        
+        <p>Hello <%= recipient_name %>,</p>
+        
+        <p>You have received a gift card!</p>
+        
+        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3><%= vendor_name %> Gift Card</h3>
+            <p><strong>Value:</strong> $<%= face_value %></p>
+            <p><strong>Scheduled for:</strong> <%= new Date(scheduled_date).toLocaleDateString() %></p>
+            
+            <% if (custom_message) { %>
+                <p><strong>Message:</strong> <%= custom_message %></p>
+            <% } %>
+        </div>
+        
+        <p><strong>From:</strong> <%= sender_name %> &lt;<%= sender_email %>&gt;</p>
+        <p><strong>Gift Card Code:</strong> <%= gift_card_code %></p>
+        
+        <p>Thank you for using our gift card service!</p>
+        
+        <hr>
+        <p style="font-size: 12px; color: #666;">
+            This is an automated message. Please do not reply to this email.
+        </p>
+    </div>
+</body>
+</html>
