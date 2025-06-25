@@ -3,8 +3,9 @@ import { NotificationModule } from './notification/notification.module';
 import { ContactModule } from './contact/contact.module';
 import { FaqModule } from './faq/faq.module';
 import { GiftCardsModule } from './gift-cards/gift-cards.module';
+import { GiftRecipientModule } from './gift-recipient/gift-recipient.module';
 
 @Module({
-  imports: [NotificationModule, ContactModule, FaqModule, GiftCardsModule],
+  imports: [NotificationModule, ContactModule, FaqModule, GiftCardsModule, GiftRecipientModule],
 })
 export class ApplicationModule {}
