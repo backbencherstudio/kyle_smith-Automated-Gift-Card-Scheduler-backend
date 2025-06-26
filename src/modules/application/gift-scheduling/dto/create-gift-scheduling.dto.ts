@@ -5,17 +5,32 @@ import {
   IsOptional,
   IsNumber,
   ValidateNested,
+  IsEmail,
+  IsNotEmpty,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class RecipientDto {
   @ApiProperty({ description: 'Recipient name' })
   @IsString()
+  @IsNotEmpty()
   name: string;
 
   @ApiProperty({ description: 'Recipient email' })
-  @IsString()
+  @IsEmail()
   email: string;
+
+  @ApiProperty({
+    description: 'Recipient birthday in YYYY-MM-DD format',
+    example: '1998-12-05',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'Birthday must be in YYYY-MM-DD format',
+  })
+  birthday: string;
 }
 
 export class CreateGiftSchedulingDto {
@@ -32,9 +47,9 @@ export class CreateGiftSchedulingDto {
   @Type(() => RecipientDto)
   recipient: RecipientDto;
 
-  @ApiProperty({ description: 'Scheduled delivery date' })
-  @IsDateString()
-  scheduled_date: Date | string;
+  // @ApiProperty({ description: 'Scheduled delivery date' })
+  // @IsDateString()
+  // scheduled_date: Date | string;
 
   @ApiProperty({ description: 'Custom message with gift (optional)' })
   @IsOptional()

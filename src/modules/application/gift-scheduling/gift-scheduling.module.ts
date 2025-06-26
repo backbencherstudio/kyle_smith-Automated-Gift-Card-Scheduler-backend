@@ -6,6 +6,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { GiftSchedulingMailService } from './mail/gift-scheduling-mail.service';
 import { GiftSchedulingMailProcessor } from './mail/gift-scheduling-mail.processor';
 import { MailerModule } from '@nestjs-modules/mailer';
+import { BirthdayCalculatorService } from './birthday-calculator.service';
 
 @Module({
   imports: [
@@ -20,6 +21,8 @@ import { MailerModule } from '@nestjs-modules/mailer';
     GiftSchedulingMailService,
     GiftSchedulingMailProcessor,
     PrismaService,
+    BirthdayCalculatorService,
   ],
+  exports: [BirthdayCalculatorService],
 })
 export class GiftSchedulingModule {}
