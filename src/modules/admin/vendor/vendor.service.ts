@@ -69,9 +69,10 @@ export class VendorService {
   }
 
   /**
-   * Get all vendors with optional filtering and simple pagination
+   * Get all vendors with optional filtering and dynamic pagination
    * @param filters - Optional filters for vendor list
    * @param page - Page number (default: 1)
+   * @param limit - Items per page (default: 10)
    * @returns Paginated list of vendors
    */
   async findAll(
@@ -80,6 +81,7 @@ export class VendorService {
       search?: string;
     },
     page: number = 1,
+    limit: number = 10,
   ) {
     try {
       const where_condition: any = {};
@@ -97,8 +99,7 @@ export class VendorService {
         ];
       }
 
-      // Simple pagination - 10 items per page
-      const limit = 10;
+      // Dynamic pagination
       const skip = (page - 1) * limit;
 
       // Get total count
@@ -118,6 +119,7 @@ export class VendorService {
           is_active: true,
           created_at: true,
           updated_at: true,
+
           _count: {
             select: {
               gift_card_inventory: true,
@@ -136,6 +138,7 @@ export class VendorService {
         data: vendors,
         total: total,
         page: page,
+        limit: limit,
         totalPages: Math.ceil(total / limit),
       };
     } catch (error) {
@@ -279,7 +282,7 @@ export class VendorService {
    */
   async remove(vendor_id: string) {
     try {
-      // Check if vendor has active gift cards
+      // Check current inventory status
       const active_gift_cards = await this.prisma.giftCardInventory.count({
         where: {
           vendor_id: vendor_id,
@@ -287,14 +290,7 @@ export class VendorService {
         },
       });
 
-      if (active_gift_cards > 0) {
-        return {
-          success: false,
-          message: `Cannot delete vendor. ${active_gift_cards} gift cards are still available.`,
-        };
-      }
-
-      // Soft delete by setting is_active to false
+      // Always allow soft delete, but provide information
       await this.prisma.vendor.update({
         where: { id: vendor_id },
         data: {
@@ -303,10 +299,20 @@ export class VendorService {
         },
       });
 
-      return {
-        success: true,
-        message: 'Vendor deactivated successfully',
-      };
+      // Return appropriate message based on inventory
+      if (active_gift_cards > 0) {
+        return {
+          success: true,
+          message: `Vendor deactivated successfully. ${active_gift_cards} gift cards remain available for existing customers.`,
+          remainingCards: active_gift_cards,
+          note: 'Vendor will not appear in new sales, but existing inventory remains accessible.',
+        };
+      } else {
+        return {
+          success: true,
+          message: 'Vendor deactivated successfully.',
+        };
+      }
     } catch (error) {
       return {
         success: false,
