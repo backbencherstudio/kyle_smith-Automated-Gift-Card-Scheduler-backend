@@ -70,7 +70,7 @@ export class VendorController {
   }
 
   /**
-   * Get all vendors with optional filtering
+   * Get all vendors with optional filtering and pagination
    */
   @ApiOperation({ summary: 'Get all vendors' })
   @ApiResponse({
@@ -78,7 +78,9 @@ export class VendorController {
     description: 'Vendors retrieved successfully',
   })
   @Get()
-  async findAll(@Query() query: { is_active?: string; search?: string }) {
+  async findAll(
+    @Query() query: { is_active?: string; search?: string; page?: string },
+  ) {
     try {
       const filters = {
         is_active:
@@ -90,7 +92,9 @@ export class VendorController {
         search: query.search,
       };
 
-      const result = await this.vendor_service.findAll(filters);
+      const page = query.page ? parseInt(query.page) : 1;
+
+      const result = await this.vendor_service.findAll(filters, page);
       return result;
     } catch (error) {
       return {

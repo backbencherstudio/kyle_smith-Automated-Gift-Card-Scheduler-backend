@@ -19,6 +19,7 @@ import { ApplicationModule } from './modules/application/application.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { PaymentModule } from './modules/payment/payment.module';
+import { QueueMonitoringModule } from './modules/queue-monitoring/queue-monitoring.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { PaymentModule } from './modules/payment/payment.module';
     AdminModule,
     ChatModule,
     PaymentModule,
+    QueueMonitoringModule,
   ],
   controllers: [AppController],
   providers: [

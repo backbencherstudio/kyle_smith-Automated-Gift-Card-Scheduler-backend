@@ -69,11 +69,18 @@ export class VendorService {
   }
 
   /**
-   * Get all vendors with optional filtering
+   * Get all vendors with optional filtering and simple pagination
    * @param filters - Optional filters for vendor list
-   * @returns List of vendors
+   * @param page - Page number (default: 1)
+   * @returns Paginated list of vendors
    */
-  async findAll(filters?: { is_active?: boolean; search?: string }) {
+  async findAll(
+    filters?: {
+      is_active?: boolean;
+      search?: string;
+    },
+    page: number = 1,
+  ) {
     try {
       const where_condition: any = {};
 
@@ -90,6 +97,16 @@ export class VendorService {
         ];
       }
 
+      // Simple pagination - 10 items per page
+      const limit = 10;
+      const skip = (page - 1) * limit;
+
+      // Get total count
+      const total = await this.prisma.vendor.count({
+        where: where_condition,
+      });
+
+      // Get vendors for current page
       const vendors = await this.prisma.vendor.findMany({
         where: where_condition,
         select: {
@@ -103,19 +120,23 @@ export class VendorService {
           updated_at: true,
           _count: {
             select: {
-              gift_card_inventory: true, // Count of gift cards for this vendor
+              gift_card_inventory: true,
             },
           },
         },
         orderBy: {
           created_at: 'desc',
         },
+        skip: skip,
+        take: limit,
       });
 
       return {
         success: true,
         data: vendors,
-        total: vendors.length,
+        total: total,
+        page: page,
+        totalPages: Math.ceil(total / limit),
       };
     } catch (error) {
       return {

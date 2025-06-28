@@ -35,6 +35,19 @@ export class LocalAuthGuard extends AuthGuard('local') {
         throw err || new UnauthorizedException();
       }
     }
+
+    // Add email verification check
+    if (!user.email_verified_at) {
+      throw new HttpException(
+        {
+          message: 'Please verify your email before logging in',
+          code: 'EMAIL_NOT_VERIFIED',
+          email: user.email,
+        },
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+
     return user;
   }
 }

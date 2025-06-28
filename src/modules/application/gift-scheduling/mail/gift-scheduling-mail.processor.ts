@@ -22,7 +22,15 @@ export class GiftSchedulingMailProcessor extends WorkerHost {
     this.logger.log(`Job ${job.id} with name ${job.name} completed`);
   }
 
-  async process(job: Job): Promise<any> {
+  @OnWorkerEvent('failed')
+  onFailed(job: Job, error: any) {
+    this.logger.error(
+      `Job ${job.id} with name ${job.name} failed with error: ${error.message}`,
+    );
+  }
+
+
+  async process(job: Job): Promise<any> {   
     this.logger.log(`Processing job ${job.id} with name ${job.name}`);
     try {
       switch (job.name) {

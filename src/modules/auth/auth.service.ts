@@ -246,12 +246,16 @@ export class AuthService {
     email,
     password,
     type,
+    address,
+    phone_number,
   }: {
     name: string;
 
     email: string;
     password: string;
     type?: string;
+    address?: string;
+    phone_number?: string;
   }) {
     try {
       // Check if email already exist
@@ -272,6 +276,8 @@ export class AuthService {
         email: email,
         password: password,
         type: type,
+        address: address,
+        phone_number: phone_number,
       });
 
       if (user == null && user.success == false) {
@@ -306,6 +312,13 @@ export class AuthService {
         isOtp: true,
       });
 
+      const { expired_at } = await UcodeRepository.getTokenDetails(token);
+
+      const timeLeft = Math.max(
+        0,
+        Math.ceil((new Date(expired_at).getTime() - Date.now()) / 60000),
+      );
+
       // send otp code to email
       await this.mailService.sendOtpCodeToEmail({
         email: email,
@@ -316,6 +329,7 @@ export class AuthService {
       return {
         success: true,
         message: 'We have sent an OTP code to your email',
+        expired_at: timeLeft,
       };
 
       // ----------------------------------------------------
@@ -674,10 +688,10 @@ export class AuthService {
           });
 
           // delete otp code
-          // await UcodeRepository.deleteToken({
-          //   email: email,
-          //   token: token,
-          // });
+          await UcodeRepository.deleteToken({
+            email: email,
+            token: token,
+          });
 
           return {
             success: true,

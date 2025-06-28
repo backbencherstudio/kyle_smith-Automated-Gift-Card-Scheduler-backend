@@ -157,7 +157,7 @@ export class GiftSchedulingService {
         scheduled_date: new Date(),
         custom_message: 'Test message',
         gift_card_code: 'TEST-1234-5678-9012',
-        delay: 60000, // 5 seconds for testing
+        delay: 10000, // 5 seconds for testing
       };
       const delayInfo = this.birthdayCalculator.getDelayInfo(recipientBirthday);
       console.log(delayInfo.dhmsFormat);

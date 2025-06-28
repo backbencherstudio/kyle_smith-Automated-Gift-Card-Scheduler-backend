@@ -163,4 +163,13 @@ export class UcodeRepository {
       return null;
     }
   }
+
+  static async getTokenDetails(token: string) {
+    const ucode = await prisma.ucode.findFirst({
+      where: {
+        token: token,
+      },
+    });
+    return ucode;
+  }
 }

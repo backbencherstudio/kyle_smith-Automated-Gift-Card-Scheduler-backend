@@ -1,20 +1,32 @@
 import { Injectable } from '@nestjs/common';
-import dayjs from 'dayjs';
-import utc from 'dayjs/plugin/utc';
-import timezone from 'dayjs/plugin/timezone';
-
-dayjs.extend(utc);
-dayjs.extend(timezone);
 
 @Injectable()
 export class BirthdayCalculatorService {
+  private dayjs: any;
+
+  constructor() {
+    this.initializeDayjs();
+  }
+
+  private initializeDayjs() {
+    // Use require to ensure proper loading
+    const dayjs = require('dayjs');
+    const utc = require('dayjs/plugin/utc');
+    const timezone = require('dayjs/plugin/timezone');
+
+    dayjs.extend(utc);
+    dayjs.extend(timezone);
+
+    this.dayjs = dayjs;
+  }
+
   /**
    * Returns the next birthday (at 00:00) as a dayjs object.
    * If today is the birthday, returns today at 00:00.
    */
-  getNextBirthday(birthday: Date, now: Date = new Date()): dayjs.Dayjs {
-    const today = dayjs(now);
-    const bday = dayjs(birthday);
+  getNextBirthday(birthday: Date, now: Date = new Date()): any {
+    const today = this.dayjs(now);
+    const bday = this.dayjs(birthday);
 
     // Set next birthday to this year
     let next = today
@@ -42,7 +54,7 @@ export class BirthdayCalculatorService {
    */
   getDelayUntilNextBirthday(birthday: Date, now: Date = new Date()): number {
     const nextBirthday = this.getNextBirthday(birthday, now);
-    const nowDayjs = dayjs(now);
+    const nowDayjs = this.dayjs(now);
 
     // If today is the birthday, or birthday is in the past, deliver immediately
     if (
@@ -63,8 +75,8 @@ export class BirthdayCalculatorService {
     const nextBirthday = this.getNextBirthday(birthday, now);
 
     // Calculate exact time differences using dayjs
-    const currentDate = dayjs(now);
-    const nextBirthdayDate = dayjs(nextBirthday);
+    const currentDate = this.dayjs(now);
+    const nextBirthdayDate = this.dayjs(nextBirthday);
 
     const exactDays = nextBirthdayDate.diff(currentDate, 'day');
     const exactHours = nextBirthdayDate.diff(currentDate, 'hour');
@@ -147,7 +159,7 @@ export class BirthdayCalculatorService {
 
       // Additional info
       recipientBirthday: birthday.toISOString(),
-      recipientBirthdayFormatted: dayjs(birthday).format('YYYY-MM-DD'),
+      recipientBirthdayFormatted: this.dayjs(birthday).format('YYYY-MM-DD'),
       nextBirthdayFormatted: nextBirthday.format('YYYY-MM-DD'),
       currentDateFormatted: currentDate.format('YYYY-MM-DD HH:mm:ss'),
     };

@@ -26,4 +26,16 @@ export class CreateUserDto {
     example: 'user',
   })
   type?: string;
+
+  @ApiProperty({
+    type: String,
+    example: '123 Main St, Anytown, USA',
+  })
+  address?: string;
+
+  @ApiProperty({
+    type: String,
+    example: '+1234567890',
+  })
+  phone_number?: string;
 }

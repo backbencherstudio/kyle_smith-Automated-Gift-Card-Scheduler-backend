@@ -58,6 +58,8 @@ export class AuthController {
       const email = data.email;
       const password = data.password;
       const type = data.type;
+      const address = data.address;
+      const phone_number = data.phone_number;
 
       if (!name) {
         throw new HttpException('Name not provided', HttpStatus.UNAUTHORIZED);
@@ -71,12 +73,20 @@ export class AuthController {
           HttpStatus.UNAUTHORIZED,
         );
       }
+      if (!address) {
+        throw new HttpException('Address not provided', HttpStatus.UNAUTHORIZED);
+      }
+      if (!phone_number) {
+        throw new HttpException('Phone number not provided', HttpStatus.UNAUTHORIZED);
+      }
 
       const response = await this.authService.register({
         name: name,
         email: email,
         password: password,
         type: type,
+        address: address,
+        phone_number: phone_number,
       });
 
       return response;
