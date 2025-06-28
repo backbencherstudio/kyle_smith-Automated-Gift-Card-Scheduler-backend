@@ -38,7 +38,7 @@ export class VendorService {
         description: create_vendor_dto.description,
         website: create_vendor_dto.website,
         logo: logoFileName,
-        is_active: create_vendor_dto.is_active ?? true,
+        is_active: create_vendor_dto.is_active === 'true' ? true : false,
       };
 
       const vendor = await this.prisma.vendor.create({
@@ -71,17 +71,17 @@ export class VendorService {
   /**
    * Get all vendors with optional filtering and dynamic pagination
    * @param filters - Optional filters for vendor list
-   * @param page - Page number (default: 1)
-   * @param limit - Items per page (default: 10)
-   * @returns Paginated list of vendors
+   * @param page - Page number (optional - if not provided, returns all data)
+   * @param limit - Items per page (optional - if not provided, returns all data)
+   * @returns Paginated list of vendors or all vendors
    */
   async findAll(
     filters?: {
       is_active?: boolean;
       search?: string;
     },
-    page: number = 1,
-    limit: number = 10,
+    page?: number,
+    limit?: number,
   ) {
     try {
       const where_condition: any = {};
@@ -99,16 +99,16 @@ export class VendorService {
         ];
       }
 
-      // Dynamic pagination
-      const skip = (page - 1) * limit;
+      // Check if pagination is requested
+      const usePagination = page !== undefined && limit !== undefined;
 
       // Get total count
       const total = await this.prisma.vendor.count({
         where: where_condition,
       });
 
-      // Get vendors for current page
-      const vendors = await this.prisma.vendor.findMany({
+      // Prepare query options
+      const queryOptions: any = {
         where: where_condition,
         select: {
           id: true,
@@ -119,7 +119,6 @@ export class VendorService {
           is_active: true,
           created_at: true,
           updated_at: true,
-
           _count: {
             select: {
               gift_card_inventory: true,
@@ -129,18 +128,43 @@ export class VendorService {
         orderBy: {
           created_at: 'desc',
         },
-        skip: skip,
-        take: limit,
-      });
-
-      return {
-        success: true,
-        data: vendors,
-        total: total,
-        page: page,
-        limit: limit,
-        totalPages: Math.ceil(total / limit),
       };
+
+      // Apply pagination only if both page and limit are provided
+      if (usePagination) {
+        const skip = (page - 1) * limit;
+        queryOptions.skip = skip;
+        queryOptions.take = limit;
+      }
+
+      // Get vendors
+      const vendors = await this.prisma.vendor.findMany(queryOptions);
+
+      // Transform the response to flatten the count
+      const transformedVendors = vendors.map((vendor: any) => ({
+        ...vendor,
+        gift_card_count: vendor._count.gift_card_inventory,
+        _count: undefined, // Remove the _count object
+      }));
+
+      // Return response based on pagination
+      if (usePagination) {
+        return {
+          success: true,
+          data: transformedVendors,
+          total: total,
+          page: page,
+          limit: limit,
+          totalPages: Math.ceil(total / limit),
+        };
+      } else {
+        return {
+          success: true,
+          data: transformedVendors,
+          total: total,
+          note: 'All vendors returned (no pagination applied)',
+        };
+      }
     } catch (error) {
       return {
         success: false,
@@ -243,12 +267,17 @@ export class VendorService {
         );
       }
 
+      const is_active = update_vendor_dto.is_active === 'true' ? true : false;
+
+      console.log(is_active);
+
       // 3. Update vendor record
       const vendor = await this.prisma.vendor.update({
         where: { id: vendor_id },
         data: {
           ...update_vendor_dto,
           ...(logoFileName && { logo: logoFileName }),
+          is_active: is_active,
         },
         select: {
           id: true,

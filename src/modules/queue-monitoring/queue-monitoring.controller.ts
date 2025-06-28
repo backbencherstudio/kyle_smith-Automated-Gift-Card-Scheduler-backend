@@ -7,6 +7,7 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  Delete,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -15,10 +16,18 @@ import {
   ApiResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/guard/role/roles.guard';
+import { Roles } from 'src/common/guard/role/roles.decorator';
+import { GetUser } from 'src/modules/auth/decorators/get-user.decorator';
 import { QueueMonitoringService } from './queue-monitoring.service';
 import { QueueStatusDto } from './dto/queue-status.dto';
 import { GiftSchedulingStatusDto } from './dto/gift-scheduling-status.dto';
 import { MonitoringStatsDto } from './dto/monitoring-stats.dto';
+import { Role } from 'src/common/guard/role/role.enum';
+import { UserGiftsDto } from './dto/user-gifts.dto';
+import { AdminDashboardDto } from './dto/admin-dashboard.dto';
+import { JobRetryResponseDto } from './dto/job-retry-response.dto';
+import { JobDeleteResponseDto } from './dto/job-delete-response.dto';
 
 @ApiTags('Queue Monitoring')
 @ApiBearerAuth()
@@ -29,8 +38,8 @@ export class QueueMonitoringController {
     private readonly queueMonitoringService: QueueMonitoringService,
   ) {}
 
-  @Get('queue-status')
-  @ApiOperation({ summary: 'Get real-time queue status' })
+  @Get('status')
+  @ApiOperation({ summary: 'Get basic queue status (User)' })
   @ApiResponse({
     status: 200,
     description: 'Queue status retrieved successfully',
@@ -38,6 +47,60 @@ export class QueueMonitoringController {
   })
   async getQueueStatus(): Promise<QueueStatusDto> {
     return this.queueMonitoringService.getQueueStatus();
+  }
+
+  @Get('my-gifts')
+  @UseGuards(JwtAuthGuard)
+  @Roles(Role.USER)
+  @ApiOperation({ summary: 'Get user scheduled gifts with status' })
+  @ApiResponse({
+    status: 200,
+    description: 'User gifts retrieved successfully',
+    type: UserGiftsDto,
+  })
+  async getMyGifts(@GetUser() user: any): Promise<UserGiftsDto> {
+    return this.queueMonitoringService.getUserGifts(user.id);
+  }
+
+  @Get('admin-dashboard')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Get admin dashboard (status + jobs combined)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Admin dashboard retrieved successfully',
+    type: AdminDashboardDto,
+  })
+  async getAdminDashboard(): Promise<AdminDashboardDto> {
+    return this.queueMonitoringService.getAdminDashboard();
+  }
+
+  @Post('admin/jobs/:id/retry')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Retry a specific failed job (Admin)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Job retried successfully',
+    type: JobRetryResponseDto,
+  })
+  async retryJob(@Param('id') id: string): Promise<JobRetryResponseDto> {
+    return this.queueMonitoringService.retryJob(id);
+  }
+
+  @Delete('admin/jobs/:id')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Delete a job and store in database (Admin)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Job deleted successfully',
+    type: JobDeleteResponseDto,
+  })
+  async deleteJob(@Param('id') id: string): Promise<JobDeleteResponseDto> {
+    return this.queueMonitoringService.deleteJob(id);
   }
 
   @Get('queue-metrics')

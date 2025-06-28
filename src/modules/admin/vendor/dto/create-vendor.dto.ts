@@ -48,12 +48,11 @@ export class CreateVendorDto {
   logo?: string;
 
   @IsOptional()
-  @IsBoolean()
+  @IsString()
   @ApiProperty({
     description: 'Whether vendor is active',
-    example: true,
-    default: true,
+    example: '1',
     required: false,
   })
-  is_active?: boolean;
+  is_active?: string;
 }

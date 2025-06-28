@@ -5,6 +5,13 @@ import { IsOptional } from 'class-validator';
 export class UpdateUserDto extends PartialType(CreateUserDto) {
   @IsOptional()
   @ApiProperty({
+    description: 'First name',
+    example: 'John',
+  })
+  name?: string;
+
+  @IsOptional()
+  @ApiProperty({
     description: 'Country',
     example: 'Nigeria',
   })
@@ -65,4 +72,12 @@ export class UpdateUserDto extends PartialType(CreateUserDto) {
     example: '14/11/2001',
   })
   date_of_birth?: string;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Avatar',
+    type: 'string',
+    format: 'binary',
+  })
+  image?: Express.Multer.File;
 }

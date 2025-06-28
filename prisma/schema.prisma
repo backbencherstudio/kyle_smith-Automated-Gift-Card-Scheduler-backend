@@ -92,6 +92,7 @@ model User {
   Contact                Contact[]
 
   @@map("users")
+  QueueJobHistory QueueJobHistory[]
 }
 
 // ==================== ROLE & PERMISSION SYSTEM ====================
@@ -250,6 +251,7 @@ model GiftScheduling {
   updated_at DateTime @default(now())
 
   @@map("gift_scheduling")
+  QueueJobHistory QueueJobHistory[]
 }
 
 model Contact {
@@ -546,4 +548,33 @@ model UserSetting {
   value String?
 
   @@map("user_settings")
+}
+
+model QueueJobHistory {
+  id          String   @id @default(cuid())
+  job_id      String   // Original Redis job ID
+  user_id     String   // Who scheduled the job
+  user        User     @relation(fields: [user_id], references: [id])
+  
+  // Job details from Redis
+  job_name    String   // "sendGiftEmail"
+  job_status  String   // "completed", "failed", "delayed"
+  job_data    Json     // Full job data from Redis
+  
+  // Gift scheduling details
+  gift_scheduling_id String?
+  gift_scheduling    GiftScheduling? @relation(fields: [gift_scheduling_id], references: [id])
+  
+  // Timing information
+  created_at    DateTime @default(now())  // When job was created
+  processed_at  DateTime?                 // When job was processed
+  completed_at  DateTime?                 // When job completed
+  deleted_at    DateTime @default(now())  // When we deleted from Redis
+  
+  // Processing metrics
+  attempts      Int      @default(0)
+  processing_time_ms Int?
+  error_message String?
+  
+  @@map("queue_job_history")
 }

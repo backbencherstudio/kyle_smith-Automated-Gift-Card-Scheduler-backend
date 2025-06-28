@@ -25,6 +25,15 @@ export class QueueStatusDto {
   @ApiProperty({ description: 'Queue health status' })
   health: 'healthy' | 'warning' | 'critical';
 
+  @ApiProperty({ description: 'Redis queue metrics', required: false })
+  redisMetrics?: {
+    redisWaiting: number;
+    redisActive: number;
+    redisCompleted: number;
+    redisFailed: number;
+    redisDelayed: number;
+  };
+
   @ApiProperty({ description: 'Last updated timestamp' })
   lastUpdated: Date;
 }

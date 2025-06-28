@@ -70,7 +70,7 @@ export class VendorController {
   }
 
   /**
-   * Get all vendors with optional filtering and dynamic pagination
+   * Get all vendors with optional filtering and pagination
    */
   @ApiOperation({ summary: 'Get all vendors' })
   @ApiResponse({
@@ -98,8 +98,14 @@ export class VendorController {
         search: query.search,
       };
 
-      const page = query.page ? parseInt(query.page) : 1;
-      const limit = query.limit ? parseInt(query.limit) : 10;
+      // Only pass pagination parameters if both are provided
+      let page: number | undefined;
+      let limit: number | undefined;
+
+      if (query.page && query.limit) {
+        page = parseInt(query.page);
+        limit = parseInt(query.limit);
+      }
 
       const result = await this.vendor_service.findAll(filters, page, limit);
       return result;
@@ -156,6 +162,7 @@ export class VendorController {
     @UploadedFile() logo: Express.Multer.File,
   ) {
     try {
+      console.log(update_vendor_dto);
       const result = await this.vendor_service.update(
         vendor_id,
         update_vendor_dto,
