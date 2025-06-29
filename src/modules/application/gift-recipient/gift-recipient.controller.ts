@@ -51,7 +51,40 @@ export class GiftRecipientController {
       };
     }
 
-    return this.giftRecipientService.findAll(filter, user_id);
+    try {
+      // ✅ Validate and convert parameters
+      const validatedFilter = {
+        search: filter.search,
+        page: filter.page ? parseInt(filter.page.toString()) : 1,
+        limit: filter.limit ? parseInt(filter.limit.toString()) : 10,
+      };
+
+      // ✅ Validate ranges
+      if (validatedFilter.page < 1) {
+        return {
+          success: false,
+          message: 'Page must be greater than 0',
+        };
+      }
+
+      if (validatedFilter.limit < 1) {
+        return {
+          success: false,
+          message: 'Limit must be greater than 0',
+        };
+      }
+
+      const result = await this.giftRecipientService.findAll(
+        validatedFilter,
+        user_id,
+      );
+      return result;
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to fetch recipients',
+      };
+    }
   }
 
   @Get(':id')

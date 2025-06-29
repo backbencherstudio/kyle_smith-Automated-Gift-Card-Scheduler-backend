@@ -60,7 +60,10 @@ export class GiftRecipientService {
 
   async findAll(filter: FilterGiftRecipientDto, user_id: string) {
     try {
-      const { search, offset = 0, limit = 20 } = filter;
+      // ✅ Ensure values are numbers
+      const page = parseInt(filter.page?.toString()) || 1;
+      const limit = parseInt(filter.limit?.toString()) || 10;
+      const search = filter.search;
 
       const where: any = { user_id: user_id };
 
@@ -71,32 +74,37 @@ export class GiftRecipientService {
         ];
       }
 
-      const [data, total] = await Promise.all([
-        this.prisma.giftRecipient.findMany({
-          where,
-          skip: offset,
-          take: limit,
-          orderBy: { created_at: 'desc' },
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            phone_number: true,
-            birthday_date: true,
-            address: true,
-            created_at: true,
-            updated_at: true,
-          },
-        }),
-        this.prisma.giftRecipient.count({ where }),
-      ]);
+      // Calculate skip
+      const skip = (page - 1) * limit;
+
+      // Get total count
+      const total = await this.prisma.giftRecipient.count({ where });
+
+      // Get data with pagination
+      const data = await this.prisma.giftRecipient.findMany({
+        where,
+        skip: skip,
+        take: limit, // ✅ Now guaranteed to be a number
+        orderBy: { created_at: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone_number: true,
+          birthday_date: true,
+          address: true,
+          created_at: true,
+          updated_at: true,
+        },
+      });
 
       return {
         success: true,
         data: data,
         total: total,
-        offset: offset,
+        page: page,
         limit: limit,
+        totalPages: Math.ceil(total / limit),
       };
     } catch (error) {
       return {

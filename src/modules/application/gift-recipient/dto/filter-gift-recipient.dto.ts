@@ -1,5 +1,5 @@
-import { IsOptional, IsString, IsNumber } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsOptional, IsString, IsNumber, IsInt, Min } from 'class-validator';
+import { Type, Transform } from 'class-transformer';
 
 export class FilterGiftRecipientDto {
   @IsOptional()
@@ -8,11 +8,15 @@ export class FilterGiftRecipientDto {
 
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
-  offset?: number;
+  @IsInt()
+  @Min(1)
+  @Transform(({ value }) => parseInt(value))
+  page?: number;
 
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
+  @Min(1)
+  @Transform(({ value }) => parseInt(value))
   limit?: number;
 }
