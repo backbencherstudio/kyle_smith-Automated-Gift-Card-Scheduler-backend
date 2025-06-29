@@ -7,13 +7,15 @@ import { GiftSchedulingMailService } from './mail/gift-scheduling-mail.service';
 import { GiftSchedulingMailProcessor } from './mail/gift-scheduling-mail.processor';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { BirthdayCalculatorService } from './birthday-calculator.service';
+import { QueueMonitoringModule } from 'src/modules/queue-monitoring/queue-monitoring.module';
 
 @Module({
   imports: [
     BullModule.registerQueue({
       name: 'gift-scheduling-mail-queue',
     }),
-    MailerModule, // for MailerService injection
+    MailerModule, // for MailerService 
+    QueueMonitoringModule,
   ],
   controllers: [GiftSchedulingController],
   providers: [

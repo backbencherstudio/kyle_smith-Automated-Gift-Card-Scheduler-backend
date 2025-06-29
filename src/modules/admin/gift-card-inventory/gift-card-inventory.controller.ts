@@ -40,8 +40,28 @@ export class GiftCardInventoryController {
   }
 
   @Get()
-  async findAll(@Query() filter: FilterGiftCardInventoryDto) {
-    return this.service.findAll(filter);
+  async findAll(
+    @Query() filter: FilterGiftCardInventoryDto,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    try {
+      // Parse pagination parameters with defaults
+      const pageNumber = page ? parseInt(page) : 1;
+      const limitNumber = limit ? parseInt(limit) : 10;
+
+      const result = await this.service.findAll(
+        filter,
+        pageNumber,
+        limitNumber,
+      );
+      return result;
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message,
+      };
+    }
   }
 
   @Get(':id')

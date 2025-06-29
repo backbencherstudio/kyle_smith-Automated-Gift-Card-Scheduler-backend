@@ -84,99 +84,101 @@ export class GiftSchedulingService {
       const delay =
         this.birthdayCalculator.getDelayUntilNextBirthday(recipientBirthday);
 
-      // // 2. Find available inventory
-      // const card = await this.prisma.giftCardInventory.findFirst({
-      //   where: {
-      //     vendor_id: createDto.vendor_id,
-      //     face_value: createDto.amount,
-      //     status: 'AVAILABLE',
-      //   },
-      //   include: { vendor: true },
-      // });
-      // if (!card) {
-      //   return {
-      //     success: false,
-      //     message: 'No available gift card for this vendor and amount',
-      //   };
-      // }
+      // 2. Find available inventory
+      const card = await this.prisma.giftCardInventory.findFirst({
+        where: {
+          vendor_id: createDto.vendor_id,
+          face_value: createDto.amount,
+          status: 'AVAILABLE',
+        },
+        include: { vendor: true },
+      });
+      if (!card) {
+        return {
+          success: false,
+          message: 'No available gift card for this vendor and amount',
+        };
+      }
 
-      // // 3. Find or create the Gift record for this inventory
-      // let gift = await this.prisma.gift.findFirst({
-      //   where: { inventory_id: card.id },
-      // });
+      // 3. Find or create the Gift record for this inventory
+      let gift = await this.prisma.gift.findFirst({
+        where: { inventory_id: card.id },
+      });
 
-      // if (!gift) {
-      //   try {
-      //     gift = await this.prisma.gift.create({
-      //       data: { inventory: { connect: { id: card.id } } },
-      //     });
-      //   } catch (giftError) {
-      //     return {
-      //       success: false,
-      //       message: `Failed to create gift record: ${giftError.message}`,
-      //       trace: giftError.stack,
-      //     };
-      //   }
-      // }
+      if (!gift) {
+        try {
+          gift = await this.prisma.gift.create({
+            data: { inventory: { connect: { id: card.id } } },
+          });
+        } catch (giftError) {
+          return {
+            success: false,
+            message: `Failed to create gift record: ${giftError.message}`,
+            trace: giftError.stack,
+          };
+        }
+      }
 
-      // // 4. Create schedule (include delivery_email)
-      // const schedule = await this.prisma.giftScheduling.create({
-      //   data: {
-      //     user: { connect: { id: user_id } },
-      //     recipient: { connect: { id: recipient.id } },
-      //     gift: { connect: { id: gift.id } },
-      //     inventory: { connect: { id: card.id } },
-      //     scheduled_date: new Date(createDto.scheduled_date),
-      //     custom_message: createDto.custom_message,
-      //     delivery_status: 'PENDING',
-      //     delivery_email: recipient.email,
-      //   },
-      // });
+      // 4. Create schedule (include delivery_email)
+      const schedule = await this.prisma.giftScheduling.create({
+        data: {
+          user: { connect: { id: user_id } },
+          recipient: { connect: { id: recipient.id } },
+          gift: { connect: { id: gift.id } },
+          inventory: { connect: { id: card.id } },
+          scheduled_date: new Date(createDto.recipient.birthday),
+          custom_message: createDto.custom_message,
+          delivery_status: 'PENDING',
+          delivery_email: recipient.email,
+        },
+      });
 
-      // // 5. Reserve the card
-      // await this.prisma.giftCardInventory.update({
-      //   where: { id: card.id },
-      //   data: { status: 'RESERVED' },
-      // });
+      // 5. Reserve the card
+      await this.prisma.giftCardInventory.update({
+        where: { id: card.id },
+        data: { status: 'RESERVED' },
+      });
 
-      // // Fetch sender (user) info
-      // const sender = await this.prisma.user.findUnique({
-      //   where: { id: user_id },
-      // });
+      // Fetch sender (user) info
+      const sender = await this.prisma.user.findUnique({
+        where: { id: user_id },
+      });
 
-      // // Decrypt the card code
-      // const decryptedCode = EncryptionHelper.decrypt(card.card_code);
+      // Decrypt the card code
+      const decryptedCode = EncryptionHelper.decrypt(card.card_code);
 
-      const testData = {
-        to: 'sadmansakib930@gmail.com',
-        recipient_name: 'Test User',
-        sender_name: 'Test Sender',
-        sender_email: 'sender@example.com',
-        vendor_name: 'Test Vendor',
-        face_value: 50,
-        scheduled_date: new Date(),
-        custom_message: 'Test message',
-        gift_card_code: 'TEST-1234-5678-9012',
-        delay: 10000, // 5 seconds for testing
-      };
+      // const testData = {
+      //   to: 'sadmansakib930@gmail.com',
+      //   recipient_name: 'Test User',
+      //   sender_name: 'Test Sender',
+      //   sender_email: 'sender@example.com',
+      //   vendor_name: 'Test Vendor',
+      //   face_value: 50,
+      //   scheduled_date: new Date(),
+      //   custom_message: 'Test message',
+      //   gift_card_code: 'TEST-1234-5678-9012',
+      //   delay: 10000, // 5 seconds for testing
+      // };
       const delayInfo = this.birthdayCalculator.getDelayInfo(recipientBirthday);
       console.log(delayInfo.dhmsFormat);
       console.log(delay);
 
       // Call the dedicated mail service
-      // await this.giftSchedulingMailService.sendGiftEmail({
-      //   to: recipient.email,
-      //   recipient_name: recipient.name,
-      //   sender_name: sender?.name || sender?.email || 'Someone',
-      //   sender_email: sender?.email || '',
-      //   vendor_name: card.vendor.name,
-      //   face_value: Number(card.face_value),
-      //   scheduled_date: schedule.scheduled_date,
-      //   custom_message: schedule.custom_message,
-      //   gift_card_code: decryptedCode,
-      //   delay,
-      // });
-      await this.giftSchedulingMailService.sendGiftEmail(testData);
+      await this.giftSchedulingMailService.sendGiftEmail({
+        to: recipient.email,
+        recipient_name: recipient.name,
+        sender_name: sender?.name || sender?.email || 'Someone',
+        sender_email: sender?.email || '',
+        vendor_name: card.vendor.name,
+        face_value: Number(card.face_value),
+        scheduled_date: schedule.scheduled_date,
+        custom_message: schedule.custom_message,
+        gift_card_code: decryptedCode,
+        user_id: user_id,
+        gift_scheduling_id: schedule.id,
+        delay: 10000,
+      });
+      // await this.giftSchedulingMailService.sendGiftEmail(testData);
 
       return {
         success: true,

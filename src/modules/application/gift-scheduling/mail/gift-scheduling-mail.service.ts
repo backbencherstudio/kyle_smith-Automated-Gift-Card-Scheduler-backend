@@ -18,6 +18,8 @@ export class GiftSchedulingMailService {
     scheduled_date: Date;
     custom_message: string;
     gift_card_code: string;
+    user_id: string;
+    gift_scheduling_id: string;
     delay?: number;
   }) {
     await this.queue.add(
@@ -35,6 +37,8 @@ export class GiftSchedulingMailService {
           scheduled_date: params.scheduled_date,
           custom_message: params.custom_message,
           gift_card_code: params.gift_card_code,
+          user_id: params.user_id,
+          gift_scheduling_id: params.gift_scheduling_id,
         },
       },
       {

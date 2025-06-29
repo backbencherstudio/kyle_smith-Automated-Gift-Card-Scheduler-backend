@@ -90,9 +90,9 @@ model User {
   gift_scheduling        GiftScheduling[]
   inventory_transactions InventoryTransaction[]
   Contact                Contact[]
+  QueueJobHistory        QueueJobHistory[]
 
   @@map("users")
-  QueueJobHistory QueueJobHistory[]
 }
 
 // ==================== ROLE & PERMISSION SYSTEM ====================
@@ -247,11 +247,11 @@ model GiftScheduling {
   delivery_status String    @default("PENDING") // "PENDING", "SENT", "FAILED"
   sent_at         DateTime? // When email was actually sent
 
-  created_at DateTime @default(now())
-  updated_at DateTime @default(now())
+  created_at      DateTime          @default(now())
+  updated_at      DateTime          @default(now())
+  QueueJobHistory QueueJobHistory[]
 
   @@map("gift_scheduling")
-  QueueJobHistory QueueJobHistory[]
 }
 
 model Contact {
@@ -550,31 +550,58 @@ model UserSetting {
   @@map("user_settings")
 }
 
+enum JobStatus {
+  WAITING
+  ACTIVE
+  COMPLETED
+  FAILED
+  DELAYED
+  CANCELLED
+}
+
 model QueueJobHistory {
-  id          String   @id @default(cuid())
-  job_id      String   // Original Redis job ID
-  user_id     String   // Who scheduled the job
-  user        User     @relation(fields: [user_id], references: [id])
-  
-  // Job details from Redis
-  job_name    String   // "sendGiftEmail"
-  job_status  String   // "completed", "failed", "delayed"
-  job_data    Json     // Full job data from Redis
-  
+  id         String    @id @default(cuid())
+  job_id     String    @unique
+  user_id    String?
+  user       User?     @relation(fields: [user_id], references: [id])
+  job_name   String
+  job_status JobStatus @default(COMPLETED)
+  job_data   Json
+
   // Gift scheduling details
   gift_scheduling_id String?
   gift_scheduling    GiftScheduling? @relation(fields: [gift_scheduling_id], references: [id])
-  
+
+  // Extracted fields for easy querying
+  recipient_name  String?
+  recipient_email String?
+  sender_name     String?
+  vendor_name     String?
+  face_value      Decimal?
+  gift_card_code  String?
+  custom_message  String?
+  delivery_email  String?
+
   // Timing information
-  created_at    DateTime @default(now())  // When job was created
-  processed_at  DateTime?                 // When job was processed
-  completed_at  DateTime?                 // When job completed
-  deleted_at    DateTime @default(now())  // When we deleted from Redis
-  
+  created_at   DateTime  @default(now())
+  processed_at DateTime?
+  completed_at DateTime  @default(now())
+
   // Processing metrics
-  attempts      Int      @default(0)
+  attempts           Int     @default(0)
   processing_time_ms Int?
-  error_message String?
-  
+  error_message      String?
+
+  // Delivery confirmation
+  email_sent_at   DateTime?
+  email_delivered Boolean   @default(true)
+  delivery_error  String?
+
+  @@index([user_id])
+  @@index([gift_scheduling_id])
+  @@index([job_status])
+  @@index([created_at])
+  @@index([completed_at])
+  @@index([recipient_email])
   @@map("queue_job_history")
 }

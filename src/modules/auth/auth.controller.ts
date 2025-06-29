@@ -434,12 +434,14 @@ export class AuthController {
       const email = data.email;
 
       const token = data.token;
+
       if (!email) {
         throw new HttpException('Email not provided', HttpStatus.UNAUTHORIZED);
       }
       if (!token) {
         throw new HttpException('Token not provided', HttpStatus.UNAUTHORIZED);
       }
+
       return await this.authService.changeEmail({
         user_id: user_id,
         new_email: email,

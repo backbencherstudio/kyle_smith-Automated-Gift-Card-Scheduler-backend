@@ -795,6 +795,8 @@ export class AuthService {
   async requestEmailChange(user_id: string, email: string) {
     try {
       const user = await UserRepository.getUserDetails(user_id);
+      console.log(user);
+      console.log(email);
       if (user) {
         const token = await UcodeRepository.createToken({
           userId: user.id,
@@ -836,6 +838,7 @@ export class AuthService {
     token: string;
   }) {
     try {
+      console.log(user_id);
       const user = await UserRepository.getUserDetails(user_id);
 
       if (user) {

@@ -2,11 +2,15 @@ import { MailerService } from '@nestjs-modules/mailer';
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
+import { QueueMonitoringService } from 'src/modules/queue-monitoring/queue-monitoring.service';
 
 @Processor('gift-scheduling-mail-queue')
 export class GiftSchedulingMailProcessor extends WorkerHost {
   private readonly logger = new Logger(GiftSchedulingMailProcessor.name);
-  constructor(private mailerService: MailerService) {
+  constructor(
+    private mailerService: MailerService,
+    private queueMonitoringService: QueueMonitoringService,
+  ) {
     super();
   }
 
@@ -18,8 +22,18 @@ export class GiftSchedulingMailProcessor extends WorkerHost {
   }
 
   @OnWorkerEvent('completed')
-  onCompleted(job: Job, result: any) {
+  async onCompleted(job: Job, result: any) {
     this.logger.log(`Job ${job.id} with name ${job.name} completed`);
+
+    try {
+      // Save to DB and remove from Redis AFTER job is completed
+      await this.queueMonitoringService.saveCompletedJobToHistory(job);
+    } catch (error) {
+      this.logger.error(
+        `Error saving completed job ${job.id} to history:`,
+        error,
+      );
+    }
   }
 
   @OnWorkerEvent('failed')

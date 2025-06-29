@@ -11,6 +11,7 @@ import { JobRetryResponseDto } from './dto/job-retry-response.dto';
 import { JobDeleteResponseDto } from './dto/job-delete-response.dto';
 import Redis from 'ioredis';
 import appConfig from 'src/config/app.config';
+import { JobStatus } from '@prisma/client';
 
 @Injectable()
 export class QueueMonitoringService {
@@ -176,37 +177,47 @@ export class QueueMonitoringService {
    */
   async getUserGifts(userId: string): Promise<UserGiftsDto> {
     try {
-      // Follow the same pattern as getAllJobs - get all jobs from Redis
-      const statuses: (
-        | 'waiting'
-        | 'active'
-        | 'completed'
-        | 'failed'
-        | 'delayed'
-      )[] = ['waiting', 'active', 'completed', 'failed', 'delayed'];
-
-      const allJobs = (
+      // Step 1: Get all active and completed jobs from Redis
+      const statuses: ('waiting' | 'active' | 'delayed' | 'completed')[] = [
+        'waiting',
+        'active',
+        'delayed',
+        'completed', // Include completed jobs from Redis
+      ];
+      const activeJobs = (
         await Promise.all(
           statuses.map((status) => this.giftQueue.getJobs([status], 0, 1000)),
         )
       ).flat();
 
-      // Filter jobs for this specific user
-      const userJobs = allJobs.filter((job) => {
-        // Check if job belongs to this user
+      // Filter for this user
+      const userActiveJobs = activeJobs.filter((job) => {
         const jobUserId = job.data?.context?.user_id || job.data?.userId;
         return jobUserId === userId;
       });
 
-      // Map jobs to user gift format using the same serialization logic
-      const gifts = userJobs.map((job) => this.mapJobToUserGiftDto(job));
+      // Step 2: Get completed jobs from DB for this user
+      const completedJobs = await this.prisma.queueJobHistory.findMany({
+        where: { user_id: userId },
+        orderBy: { completed_at: 'desc' },
+      });
 
-      // Calculate summary based on job status
-      const summary = this.calculateGiftSummaryFromJobs(userJobs);
+      // Step 3: Combine and format (Redis jobs first, then DB jobs)
+      const activeGifts = userActiveJobs.map((job) =>
+        this.mapJobToUserGiftDto(job),
+      );
+      const completedGifts = completedJobs.map((job) =>
+        this.mapCompletedJobToUserGiftDto(job),
+      );
+
+      const allGifts = [...activeGifts, ...completedGifts];
+
+      // Step 4: Calculate summary
+      const summary = this.calculateGiftSummary(allGifts);
 
       return {
-        totalScheduled: gifts.length,
-        gifts,
+        totalScheduled: allGifts.length,
+        gifts: allGifts,
         summary,
         lastUpdated: new Date(),
       };
@@ -233,12 +244,12 @@ export class QueueMonitoringService {
           }
         : null;
 
-    // Get job status
+    // Get job status (unified logic)
     const getJobStatus = () => {
       if (job.finishedOn) return 'completed';
       if (job.processedOn) return 'running';
       if (job.failedReason) return 'failed';
-      if (job.delay > 0) return 'scheduled';
+      if (job.delay > 0) return 'scheduled'; // Return 'scheduled' for consistency
       return 'waiting';
     };
 
@@ -250,7 +261,7 @@ export class QueueMonitoringService {
     const senderName = context.sender_name || 'Unknown';
     const vendorName = context.vendor_name || 'Unknown';
     const faceValue = context.face_value || 0;
-    const giftCardCode = context.gift_card_code || 'No code'; // Always extract
+    const giftCardCode = context.gift_card_code || 'No code';
     const scheduledDate = context.scheduled_date || job.timestamp;
     const deliveryEmail = context.delivery_email || recipientEmail;
     const customMessage = context.custom_message || null;
@@ -282,7 +293,7 @@ export class QueueMonitoringService {
       giftCard: {
         vendor: vendorName,
         amount: Number(faceValue),
-        code: giftCardCode, // Always show gift card code - no conditions
+        code: giftCardCode,
         status: getDeliveryStatus(),
       },
       scheduling: {
@@ -314,7 +325,7 @@ export class QueueMonitoringService {
   /**
    * Calculate gift summary from jobs
    */
-  private calculateGiftSummaryFromJobs(jobs: any[]) {
+  private calculateGiftSummary(jobs: any[]) {
     const summary = {
       pending: 0,
       sent: 0,
@@ -323,7 +334,21 @@ export class QueueMonitoringService {
     };
 
     jobs.forEach((job) => {
-      const status = this.getJobStatus(job);
+      // Use the same status logic as mapJobToUserGiftDto
+      let status: string;
+
+      if (job.finishedOn) {
+        status = 'completed';
+      } else if (job.processedOn) {
+        status = 'running';
+      } else if (job.failedReason) {
+        status = 'failed';
+      } else if (job.delay > 0) {
+        status = 'scheduled'; // Map 'delayed' to 'scheduled' for consistency
+      } else {
+        status = 'waiting';
+      }
+
       switch (status) {
         case 'completed':
           summary.sent++;
@@ -334,6 +359,8 @@ export class QueueMonitoringService {
         case 'running':
           summary.processing++;
           break;
+        case 'scheduled':
+        case 'waiting':
         default:
           summary.pending++;
       }
@@ -343,13 +370,13 @@ export class QueueMonitoringService {
   }
 
   /**
-   * Get job status from Redis job
+   * Get job status from Redis job (unified method)
    */
   private getJobStatus(job: any): string {
     if (job.finishedOn) return 'completed';
     if (job.processedOn) return 'running';
     if (job.failedReason) return 'failed';
-    if (job.delay > 0) return 'delayed';
+    if (job.delay > 0) return 'scheduled'; // Return 'scheduled' instead of 'delayed' for consistency
     return 'waiting';
   }
 
@@ -648,24 +675,45 @@ export class QueueMonitoringService {
 
   // 1. Get all jobs (paginated, all statuses)
   async getAllJobs(start = 0, end = 49) {
-    const statuses: (
-      | 'waiting'
-      | 'active'
-      | 'completed'
-      | 'failed'
-      | 'delayed'
-    )[] = ['waiting', 'active', 'completed', 'failed', 'delayed'];
-    const jobs = (
-      await Promise.all(
-        statuses.map((status) => this.giftQueue.getJobs([status], start, end)),
-      )
-    ).flat();
+    try {
+      // Step 1: Get active jobs from Redis
+      const statuses: ('waiting' | 'active' | 'delayed')[] = [
+        'waiting',
+        'active',
+        'delayed',
+      ];
+      const activeJobs = (
+        await Promise.all(
+          statuses.map((status) =>
+            this.giftQueue.getJobs([status], start, end),
+          ),
+        )
+      ).flat();
 
-    return {
-      total: jobs.length,
-      jobs: jobs.map((job) => this.serializeJob(job)),
-      lastUpdated: new Date(),
-    };
+      // Step 2: Get completed jobs from DB
+      const completedJobs = await this.prisma.queueJobHistory.findMany({
+        orderBy: { completed_at: 'desc' },
+        skip: start,
+        take: end - start,
+      });
+
+      // Step 3: Combine and format (Redis jobs first, then DB jobs)
+      const activeJobData = activeJobs.map((job) => this.serializeJob(job));
+      const completedJobData = completedJobs.map((job) =>
+        this.serializeCompletedJob(job),
+      );
+
+      const allJobs = [...activeJobData, ...completedJobData];
+
+      return {
+        total: allJobs.length,
+        jobs: allJobs,
+        lastUpdated: new Date(),
+      };
+    } catch (error) {
+      this.logger.error('Error getting all jobs:', error);
+      throw error;
+    }
   }
 
   // 2. Get jobs by status (paginated)
@@ -708,12 +756,12 @@ export class QueueMonitoringService {
           }
         : null;
 
-    // Get job state for status
+    // Get job state for status (unified logic)
     const getJobStatus = () => {
       if (job.finishedOn) return 'completed';
       if (job.processedOn) return 'running';
       if (job.failedReason) return 'failed';
-      if (job.delay > 0) return 'scheduled';
+      if (job.delay > 0) return 'scheduled'; // Return 'scheduled' for consistency
       return 'waiting';
     };
 
@@ -742,6 +790,158 @@ export class QueueMonitoringService {
       attempts: job.attemptsMade || 0,
       // Only include failed reason if job failed
       ...(job.failedReason && { failedReason: job.failedReason }),
+    };
+  }
+
+  // Save completed job to DB with proper data extraction
+  async saveCompletedJobToHistory(job: any) {
+    const now = new Date();
+
+    try {
+      // Extract data to match Redis job structure
+      const context = job.data?.context || {};
+      const recipientName = context.recipient_name || 'Unknown';
+      const recipientEmail =
+        job.data?.to || context.recipient_email || 'No email';
+      const senderName = context.sender_name || 'Unknown';
+      const vendorName = context.vendor_name || 'Unknown';
+      const faceValue = context.face_value || 0;
+      const giftCardCode = context.gift_card_code || 'No code';
+      const customMessage = context.custom_message || null;
+      const deliveryEmail = context.delivery_email || recipientEmail;
+
+      // Save to DB with extracted fields
+      await this.prisma.queueJobHistory.create({
+        data: {
+          job_id: job.id,
+          user_id: context.user_id || null,
+          job_name: job.name,
+          job_status: JobStatus.COMPLETED,
+          job_data: job.data,
+
+          // Extracted fields for easy querying
+          recipient_name: recipientName,
+          recipient_email: recipientEmail,
+          sender_name: senderName,
+          vendor_name: vendorName,
+          face_value: faceValue,
+          gift_card_code: giftCardCode,
+          custom_message: customMessage,
+          delivery_email: deliveryEmail,
+
+          // Timing
+          created_at: new Date(job.timestamp),
+          processed_at: job.processedOn ? new Date(job.processedOn) : null,
+          completed_at: now,
+
+          // Metrics
+          attempts: job.attemptsMade || 0,
+          processing_time_ms:
+            job.processedOn && job.finishedOn
+              ? job.finishedOn - job.processedOn
+              : null,
+          error_message: job.failedReason || null,
+
+          // Delivery confirmation
+          email_sent_at: now,
+          email_delivered: true,
+        },
+      });
+
+      // Update GiftScheduling record
+      const giftSchedulingId = context.gift_scheduling_id;
+      if (giftSchedulingId) {
+        await this.prisma.giftScheduling.update({
+          where: { id: giftSchedulingId },
+          data: {
+            delivery_status: 'SENT',
+            sent_at: now,
+          },
+        });
+      }
+
+      // Remove from Redis AFTER saving to DB (like the working function)
+      await job.remove();
+
+      this.logger.log(
+        `Job ${job.id} completed, saved to DB, and removed from Redis`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Error saving completed job ${job.id} to history:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  // Map completed job from DB to match Redis job format exactly
+  private mapCompletedJobToUserGiftDto(job: any) {
+    const TIMEZONE = 'Asia/Dhaka';
+    const DISPLAY_FORMAT = 'dddd, MMMM D, YYYY [at] h:mm:ss A';
+
+    const formatTime = (date: Date) => ({
+      iso: this.dayjs(date).toISOString(),
+      display: this.dayjs(date).tz(TIMEZONE).format(DISPLAY_FORMAT),
+      relative: this.dayjs(date).tz(TIMEZONE).fromNow(),
+    });
+
+    return {
+      id: job.job_id,
+      recipient: {
+        name: job.recipient_name || 'Unknown',
+        email: job.recipient_email || 'No email',
+        birthday: null,
+      },
+      giftCard: {
+        vendor: job.vendor_name || 'Unknown',
+        amount: Number(job.face_value) || 0,
+        code: job.gift_card_code || 'No code',
+        status: 'SENT' as const,
+      },
+      scheduling: {
+        scheduledDate: formatTime(job.created_at).iso,
+        deliveryEmail: job.delivery_email || job.recipient_email || 'No email',
+        customMessage: job.custom_message,
+      },
+      status: {
+        deliveryStatus: 'SENT' as const,
+        sentAt: formatTime(job.completed_at).iso,
+        queueStatus: 'completed',
+        processingTime: job.processing_time_ms,
+        errorMessage: job.error_message,
+      },
+      createdAt: formatTime(job.created_at).iso,
+    };
+  }
+
+  // Serialize completed job from DB for admin view (matching Redis format)
+  private serializeCompletedJob(job: any) {
+    const TIMEZONE = 'Asia/Dhaka';
+    const DISPLAY_FORMAT = 'dddd, MMMM D, YYYY [at] h:mm:ss A';
+
+    const formatTime = (date: Date) => ({
+      iso: this.dayjs(date).toISOString(),
+      display: this.dayjs(date).tz(TIMEZONE).format(DISPLAY_FORMAT),
+      relative: this.dayjs(date).tz(TIMEZONE).fromNow(),
+    });
+
+    // Return exact same format as Redis job
+    return {
+      id: job.job_id,
+      status: 'completed',
+      recipient: {
+        name: job.recipient_name || 'Unknown',
+        email: job.recipient_email || 'No email',
+      },
+      sender: job.sender_name || 'Unknown',
+      vendor: job.vendor_name || 'Unknown',
+      amount: Number(job.face_value) || 0,
+      giftCardCode: job.gift_card_code || 'No code',
+      scheduled: formatTime(job.created_at),
+      processed: formatTime(job.processed_at || job.created_at),
+      completed: formatTime(job.completed_at),
+      attempts: job.attempts || 0,
     };
   }
 }

@@ -133,17 +133,13 @@ export class GiftCardInventoryService {
     }
   }
 
-  async findAll(filter: FilterGiftCardInventoryDto) {
+  async findAll(
+    filter: FilterGiftCardInventoryDto,
+    page?: number,
+    limit?: number,
+  ) {
     try {
-      const {
-        vendor_id,
-        status,
-        min_price,
-        max_price,
-        offset = 0,
-        limit = 20,
-        search,
-      } = filter;
+      const { vendor_id, status, min_price, max_price, search } = filter;
 
       const where: any = {};
       if (vendor_id) where.vendor_id = vendor_id;
@@ -157,17 +153,33 @@ export class GiftCardInventoryService {
         where.OR = [{ card_code: { contains: search, mode: 'insensitive' } }];
       }
 
-      const [data, total] = await Promise.all([
-        this.prisma.giftCardInventory.findMany({
-          where,
-          skip: offset,
-          take: limit,
-          orderBy: { created_at: 'desc' },
-        }),
-        this.prisma.giftCardInventory.count({ where }),
-      ]);
+      // Set default pagination values
+      const currentPage = page || 1;
+      const currentLimit = limit || 10;
 
-      return { success: true, data, total, offset, limit };
+      // Get total count
+      const total = await this.prisma.giftCardInventory.count({ where });
+
+      // Calculate skip
+      const skip = (currentPage - 1) * currentLimit;
+
+      // Get gift cards with pagination
+      const data = await this.prisma.giftCardInventory.findMany({
+        where,
+        skip: skip,
+        take: currentLimit,
+        orderBy: { created_at: 'desc' },
+      });
+
+      // Always return pagination format
+      return {
+        success: true,
+        data,
+        total,
+        page: currentPage,
+        limit: currentLimit,
+        totalPages: Math.ceil(total / currentLimit),
+      };
     } catch (error) {
       return { success: false, message: error.message, trace: error.stack };
     }

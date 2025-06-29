@@ -6,7 +6,5 @@ export class FilterGiftCardInventoryDto {
   @IsOptional() @IsString() status?: string;
   @IsOptional() @Type(() => Number) @IsNumber() min_price?: number;
   @IsOptional() @Type(() => Number) @IsNumber() max_price?: number;
-  @IsOptional() @Type(() => Number) @IsNumber() offset?: number;
-  @IsOptional() @Type(() => Number) @IsNumber() limit?: number;
   @IsOptional() @IsString() search?: string;
 }
