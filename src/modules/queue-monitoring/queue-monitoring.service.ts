@@ -184,17 +184,66 @@ export class QueueMonitoringService {
         'delayed',
         'completed', // Include completed jobs from Redis
       ];
+
+      this.logger.debug(
+        `Getting jobs for user ${userId} with statuses: ${statuses.join(', ')}`,
+      );
+
       const activeJobs = (
         await Promise.all(
-          statuses.map((status) => this.giftQueue.getJobs([status], 0, 1000)),
+          statuses.map(async (status) => {
+            const jobs = await this.giftQueue.getJobs([status], 0, 1000);
+            this.logger.debug(
+              `Found ${jobs.length} jobs with status: ${status}`,
+            );
+            return jobs;
+          }),
         )
       ).flat();
 
-      // Filter for this user
-      const userActiveJobs = activeJobs.filter((job) => {
-        const jobUserId = job.data?.context?.user_id || job.data?.userId;
-        return jobUserId === userId;
+      this.logger.debug(`Total jobs found in Redis: ${activeJobs.length}`);
+
+      // Debug: Log ALL jobs and their data structure
+      activeJobs.forEach((job, index) => {
+        const context = job.data?.context || {};
+        const jobUserId = context.user_id;
+        const jobStatus = this.getJobStatus(job);
+        const hasDelay = job.delay > 0;
+
+        this.logger.debug(`Job ${index + 1}:`, {
+          jobId: job.id,
+          jobStatus: jobStatus,
+          hasDelay: hasDelay,
+          delay: job.delay,
+          user_id: jobUserId,
+          lookingFor: userId,
+          matches: jobUserId === userId,
+          data: {
+            context: context,
+            to: job.data?.to,
+            subject: job.data?.subject,
+          },
+        });
       });
+
+      // Filter for this user (comprehensive logic)
+      const userActiveJobs = activeJobs.filter((job) => {
+        const context = job.data?.context || {};
+        const jobUserId = context.user_id;
+        const matches = jobUserId === userId;
+
+        if (matches) {
+          this.logger.debug(
+            `✅ Found matching job for user ${userId}: Job ID ${job.id}, Status: ${this.getJobStatus(job)}`,
+          );
+        }
+
+        return matches;
+      });
+
+      this.logger.debug(
+        `Filtered to ${userActiveJobs.length} jobs for user ${userId}`,
+      );
 
       // Step 2: Get completed jobs from DB for this user
       const completedJobs = await this.prisma.queueJobHistory.findMany({
@@ -202,18 +251,34 @@ export class QueueMonitoringService {
         orderBy: { completed_at: 'desc' },
       });
 
+      this.logger.debug(
+        `Found ${completedJobs.length} completed jobs in DB for user ${userId}`,
+      );
+
       // Step 3: Combine and format (Redis jobs first, then DB jobs)
-      const activeGifts = userActiveJobs.map((job) =>
-        this.mapJobToUserGiftDto(job),
-      );
-      const completedGifts = completedJobs.map((job) =>
-        this.mapCompletedJobToUserGiftDto(job),
-      );
+      const activeGifts = userActiveJobs.map((job) => {
+        const gift = this.mapJobToUserGiftDto(job);
+        this.logger.debug(`Mapped Redis job ${job.id} to gift:`, gift);
+        return gift;
+      });
+
+      const completedGifts = completedJobs.map((job) => {
+        const gift = this.mapCompletedJobToUserGiftDto(job);
+        this.logger.debug(`Mapped DB job ${job.job_id} to gift:`, gift);
+        return gift;
+      });
 
       const allGifts = [...activeGifts, ...completedGifts];
 
       // Step 4: Calculate summary
       const summary = this.calculateGiftSummary(allGifts);
+
+      this.logger.debug(`Final result for user ${userId}:`, {
+        totalScheduled: allGifts.length,
+        activeGifts: activeGifts.length,
+        completedGifts: completedGifts.length,
+        summary: summary,
+      });
 
       return {
         totalScheduled: allGifts.length,
@@ -810,9 +875,32 @@ export class QueueMonitoringService {
       const customMessage = context.custom_message || null;
       const deliveryEmail = context.delivery_email || recipientEmail;
 
-      // Save to DB with extracted fields
-      await this.prisma.queueJobHistory.create({
-        data: {
+      // Use upsert instead of create to handle duplicates
+      await this.prisma.queueJobHistory.upsert({
+        where: { job_id: job.id },
+        update: {
+          // Update with latest completion data
+          job_status: JobStatus.COMPLETED,
+          completed_at: now,
+          attempts: job.attemptsMade || 0,
+          processing_time_ms:
+            job.processedOn && job.finishedOn
+              ? job.finishedOn - job.processedOn
+              : null,
+          error_message: job.failedReason || null,
+          email_sent_at: now,
+          email_delivered: true,
+          // Update extracted fields in case they changed
+          recipient_name: recipientName,
+          recipient_email: recipientEmail,
+          sender_name: senderName,
+          vendor_name: vendorName,
+          face_value: faceValue,
+          gift_card_code: giftCardCode,
+          custom_message: customMessage,
+          delivery_email: deliveryEmail,
+        },
+        create: {
           job_id: job.id,
           user_id: context.user_id || null,
           job_name: job.name,

@@ -59,7 +59,7 @@ export class QueueMonitoringController {
     type: UserGiftsDto,
   })
   async getMyGifts(@GetUser() user: any): Promise<UserGiftsDto> {
-    return this.queueMonitoringService.getUserGifts(user.id);
+    return this.queueMonitoringService.getUserGifts(user.userId);
   }
 
   @Get('admin-dashboard')
