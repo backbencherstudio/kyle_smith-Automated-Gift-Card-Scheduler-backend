@@ -39,12 +39,8 @@ export class WalletController {
     type: WalletCard,
   })
   async addCard(@Body() dto: AddCardDto, @Req() req: Request) {
-    try {
-      const userId = req.user.userId;
-      return await this.walletService.addCard(userId, dto.paymentMethodId);
-    } catch (error) {
-      throw new BadRequestException(error.message);
-    }
+    const userId = req.user.userId;
+    return await this.walletService.addCard(userId, dto);
   }
 
   @Get('cards')
@@ -128,5 +124,4 @@ export class WalletController {
       throw new BadRequestException(error.message);
     }
   }
-
 }

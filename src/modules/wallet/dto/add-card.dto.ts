@@ -2,11 +2,29 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsNotEmpty } from 'class-validator';
 
 export class AddCardDto {
-  @ApiProperty({
-    description: 'Stripe payment method ID',
-    example: 'pm_1234567890',
-  })
+  @ApiProperty({ example: 'Sadman Sakib' })
   @IsString()
   @IsNotEmpty()
-  paymentMethodId: string;
+  billing_name: string;
+
+
+  @ApiProperty({ example: '5555555555554444' })
+  @IsString()
+  @IsNotEmpty()
+  card_number: string;
+
+  @ApiProperty({ example: '122' })
+  @IsString()
+  @IsNotEmpty()
+  card_cvc: string;
+
+  @ApiProperty({ example: '12' })
+  @IsString()
+  @IsNotEmpty()
+  card_exp_month: string;
+
+  @ApiProperty({ example: '32' })
+  @IsString()
+  @IsNotEmpty()
+  card_exp_year: string;
 }

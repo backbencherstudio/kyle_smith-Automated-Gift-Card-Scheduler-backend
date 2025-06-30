@@ -6,12 +6,13 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { StripePayment } from '../../common/lib/Payment/stripe/StripePayment';
 import { AddCardDto } from './dto/add-card.dto';
+import axios from 'axios';
 
 @Injectable()
 export class WalletService {
   constructor(private prisma: PrismaService) {}
 
-  async addCard(userId: string, paymentMethodId: string) {
+  async addCard(userId: string, dto: AddCardDto) {
     try {
       // Get user's Stripe customer ID
       const user = await this.prisma.user.findUnique({
@@ -23,17 +24,46 @@ export class WalletService {
         throw new BadRequestException('User has no Stripe customer account');
       }
 
-      // Attach payment method to Stripe customer
-      await StripePayment.attachCustomerPaymentMethodId({
-        customer_id: user.billing_id,
-        payment_method_id: paymentMethodId,
-      });
+      // 1. Create the PaymentMethod (without customer)
+      const formData = new URLSearchParams();
+      formData.append('type', 'card');
+      formData.append('card[number]', dto.card_number);
+      formData.append('card[exp_month]', dto.card_exp_month);
+      formData.append('card[exp_year]', dto.card_exp_year);
+      formData.append('card[cvc]', dto.card_cvc);
+      formData.append('billing_details[name]', dto.billing_name);
 
-      // Store card reference in database
+      const response = await axios.post(
+        'https://api.stripe.com/v1/payment_methods',
+        formData.toString(),
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.STRIPE_PUBLIC_KEY}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        },
+      );
+
+      // 2. Attach the PaymentMethod to the customer
+      const attachData = new URLSearchParams();
+      attachData.append('customer', user.billing_id);
+
+      await axios.post(
+        `https://api.stripe.com/v1/payment_methods/${response.data.id}/attach`,
+        attachData.toString(),
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        },
+      );
+
+      // 3. Store card reference in database
       const savedCard = await this.prisma.userPaymentMethod.create({
         data: {
           user_id: userId,
-          payment_method_id: paymentMethodId,
+          payment_method_id: response.data.id,
           stripe_customer_id: user.billing_id,
           is_default: false,
           is_active: true,
@@ -44,15 +74,21 @@ export class WalletService {
         success: true,
         message: 'Card added successfully',
         data: {
-          id: savedCard.id,
-          payment_method_id: savedCard.payment_method_id,
-          is_default: savedCard.is_default,
-          created_at: savedCard.created_at,
+          payment_method_id: response.data.id,
+          is_default: false,
+          created_at: new Date(),
         },
       };
     } catch (error) {
-      if (error.type === 'StripeCardError') {
-        throw new BadRequestException('Invalid card information');
+      console.error(
+        'Stripe error:',
+        error.response?.data?.error || error.message,
+      );
+
+      if (error.response?.data?.error?.type === 'card_error') {
+        throw new BadRequestException(
+          error.response.data.error.message || 'Invalid card information',
+        );
       }
       throw new BadRequestException('Failed to add card');
     }

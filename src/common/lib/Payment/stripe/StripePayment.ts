@@ -22,6 +22,7 @@ export class StripePayment {
     billing_details: stripe.PaymentMethodCreateParams.BillingDetails;
   }): Promise<stripe.PaymentMethod> {
     const paymentMethod = await Stripe.paymentMethods.create({
+      type: 'card',
       card: {
         number: card.number,
         exp_month: card.exp_month,

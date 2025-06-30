@@ -63,6 +63,7 @@ export default () => ({
   payment: {
     stripe: {
       secret_key: process.env.STRIPE_SECRET_KEY,
+      public_key: process.env.STRIPE_PUBLIC_KEY,
       webhook_secret: process.env.STRIPE_WEBHOOK_SECRET,
     },
   },
