@@ -238,6 +238,8 @@ model GiftScheduling {
   gift_id      String
   gift         Gift          @relation(fields: [gift_id], references: [id])
 
+  is_notify Boolean @default(true)
+
   inventory_id String?
   inventory    GiftCardInventory? @relation(fields: [inventory_id], references: [id])
 
@@ -348,11 +350,16 @@ model UserPaymentMethod {
   updated_at DateTime  @default(now())
   deleted_at DateTime?
 
-  user_id String?
-  user    User?   @relation(fields: [user_id], references: [id])
+  user_id String
+  user    User   @relation(fields: [user_id], references: [id])
 
   payment_method_id String?
   checkout_id       String?
+
+  // Add essential new fields
+  stripe_customer_id String
+  is_default         Boolean @default(false)
+  is_active          Boolean @default(true)
 
   @@map("user_payment_methods")
 }

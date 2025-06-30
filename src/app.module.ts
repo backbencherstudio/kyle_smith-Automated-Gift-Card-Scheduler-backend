@@ -20,6 +20,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { QueueMonitoringModule } from './modules/queue-monitoring/queue-monitoring.module';
+import { WalletModule } from './modules/wallet/wallet.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { QueueMonitoringModule } from './modules/queue-monitoring/queue-monitori
     ChatModule,
     PaymentModule,
     QueueMonitoringModule,
+    WalletModule,
   ],
   controllers: [AppController],
   providers: [

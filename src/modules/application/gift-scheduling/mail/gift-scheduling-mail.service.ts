@@ -21,6 +21,7 @@ export class GiftSchedulingMailService {
     user_id: string;
     gift_scheduling_id: string;
     delay?: number;
+    is_notify?: boolean;
   }) {
     await this.queue.add(
       'sendGiftEmail',
@@ -39,6 +40,7 @@ export class GiftSchedulingMailService {
           gift_card_code: params.gift_card_code,
           user_id: params.user_id,
           gift_scheduling_id: params.gift_scheduling_id,
+          is_notify: params.is_notify,
         },
       },
       {

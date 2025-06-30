@@ -434,4 +434,42 @@ export class StripePayment {
     );
     return event;
   }
+
+  // Detach payment method from customer
+  static async detachPaymentMethod(
+    paymentMethodId: string,
+  ): Promise<stripe.PaymentMethod> {
+    const paymentMethod = await Stripe.paymentMethods.detach(paymentMethodId);
+    return paymentMethod;
+  }
+
+  // Get payment method details
+  static async getPaymentMethod(
+    paymentMethodId: string,
+  ): Promise<stripe.PaymentMethod> {
+    const paymentMethod = await Stripe.paymentMethods.retrieve(paymentMethodId);
+    return paymentMethod as stripe.PaymentMethod;
+  }
+
+  // Update payment method (for future use)
+  static async updatePaymentMethod(
+    paymentMethodId: string,
+    updates: stripe.PaymentMethodUpdateParams,
+  ): Promise<stripe.PaymentMethod> {
+    const paymentMethod = await Stripe.paymentMethods.update(
+      paymentMethodId,
+      updates,
+    );
+    return paymentMethod;
+  }
+
+  static async getPaymentMethodById(paymentMethodId: string) {
+    try {
+      const paymentMethod =
+        await Stripe.paymentMethods.retrieve(paymentMethodId);
+      return paymentMethod;
+    } catch (error) {
+      throw new Error(`Failed to retrieve payment method: ${error.message}`);
+    }
+  }
 }

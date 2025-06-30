@@ -21,7 +21,7 @@ export class GiftSchedulingService {
 
   async create(createDto: CreateGiftSchedulingDto, user_id: string) {
     try {
-      // 1. Validate recipient's birthday format
+      // 1. Validate recipient's birthday format (for recipient storage only)
       const birthdayStr = createDto.recipient.birthday;
       console.log(birthdayStr);
       const birthday = dayjs(birthdayStr, 'YYYY-MM-DD', true); // strict parsing
@@ -33,7 +33,21 @@ export class GiftSchedulingService {
         };
       }
 
-      // 2. Find or create recipient (check by email for the same user)
+      console.log(createDto);
+
+      // 2. Validate send_gift_date format (for scheduling calculation)
+      const sendGiftDateStr = createDto.send_gift_date;
+      console.log('Send gift date:', sendGiftDateStr);
+      const sendGiftDate = dayjs(sendGiftDateStr, 'YYYY-MM-DD', true); // strict parsing
+
+      if (!sendGiftDate.isValid()) {
+        return {
+          success: false,
+          message: 'Invalid send gift date format. Please use YYYY-MM-DD.',
+        };
+      }
+
+      // 3. Find or create recipient (check by email for the same user)
       let recipient = await this.prisma.giftRecipient.findFirst({
         where: {
           email: createDto.recipient.email,
@@ -47,7 +61,7 @@ export class GiftSchedulingService {
             user: { connect: { id: user_id } },
             name: createDto.recipient.name,
             email: createDto.recipient.email,
-            birthday_date: birthday.toDate(), // <-- use parsed date
+            birthday_date: birthday.toDate(), // Use birthday for recipient storage
           },
         });
       } else {
@@ -71,20 +85,12 @@ export class GiftSchedulingService {
         }
       }
 
-      // 1. Get recipient's birthday
-      const recipientBirthday = recipient.birthday_date;
-      if (!recipientBirthday) {
-        return {
-          success: false,
-          message: 'Recipient does not have a valid birthday.',
-        };
-      }
+      // 4. Calculate delay using send_gift_date (not birthday)
+      const delay = this.birthdayCalculator.getDelayUntilNextBirthday(
+        sendGiftDate.toDate(),
+      );
 
-      // 2. Calculate delay until next birthday
-      const delay =
-        this.birthdayCalculator.getDelayUntilNextBirthday(recipientBirthday);
-
-      // 2. Find available inventory
+      // 5. Find available inventory
       const card = await this.prisma.giftCardInventory.findFirst({
         where: {
           vendor_id: createDto.vendor_id,
@@ -100,7 +106,7 @@ export class GiftSchedulingService {
         };
       }
 
-      // 3. Find or create the Gift record for this inventory
+      // 6. Find or create the Gift record for this inventory
       let gift = await this.prisma.gift.findFirst({
         where: { inventory_id: card.id },
       });
@@ -119,21 +125,22 @@ export class GiftSchedulingService {
         }
       }
 
-      // 4. Create schedule (include delivery_email)
+      // 7. Create schedule using send_gift_date for scheduled_date
       const schedule = await this.prisma.giftScheduling.create({
         data: {
           user: { connect: { id: user_id } },
           recipient: { connect: { id: recipient.id } },
           gift: { connect: { id: gift.id } },
           inventory: { connect: { id: card.id } },
-          scheduled_date: new Date(createDto.recipient.birthday),
+          scheduled_date: sendGiftDate.toDate(), // Use send_gift_date for scheduling
           custom_message: createDto.custom_message,
           delivery_status: 'PENDING',
           delivery_email: recipient.email,
+          is_notify: createDto.is_notify ?? true, // Add is_notify field
         },
       });
 
-      // 5. Reserve the card
+      // 8. Reserve the card
       await this.prisma.giftCardInventory.update({
         where: { id: card.id },
         data: { status: 'RESERVED' },
@@ -147,23 +154,13 @@ export class GiftSchedulingService {
       // Decrypt the card code
       const decryptedCode = EncryptionHelper.decrypt(card.card_code);
 
-      // const testData = {
-      //   to: 'sadmansakib930@gmail.com',
-      //   recipient_name: 'Test User',
-      //   sender_name: 'Test Sender',
-      //   sender_email: 'sender@example.com',
-      //   vendor_name: 'Test Vendor',
-      //   face_value: 50,
-      //   scheduled_date: new Date(),
-      //   custom_message: 'Test message',
-      //   gift_card_code: 'TEST-1234-5678-9012',
-      //   delay: 10000, // 5 seconds for testing
-      // };
-      const delayInfo = this.birthdayCalculator.getDelayInfo(recipientBirthday);
+      const delayInfo = this.birthdayCalculator.getDelayInfo(
+        sendGiftDate.toDate(),
+      );
       console.log(delayInfo.dhmsFormat);
       console.log(delay);
 
-      // Call the dedicated mail service
+      // Call the dedicated mail service with is_notify
       await this.giftSchedulingMailService.sendGiftEmail({
         to: recipient.email,
         recipient_name: recipient.name,
@@ -177,26 +174,12 @@ export class GiftSchedulingService {
         user_id: user_id,
         gift_scheduling_id: schedule.id,
         delay: delay,
+        is_notify: schedule.is_notify, // Pass is_notify to mail service
       });
-      // await this.giftSchedulingMailService.sendGiftEmail(testData);
 
       return {
         success: true,
         message: 'Gift scheduled successfully',
-        // data: {
-        //   id: schedule.id,
-        //   recipient_id: recipient.id,
-        //   recipient_name: recipient.name,
-        //   recipient_email: recipient.email,
-        //   vendor_id: card.vendor_id,
-        //   face_value: card.face_value,
-        //   scheduled_date: schedule.scheduled_date,
-        //   delivery_status: schedule.delivery_status,
-        //   is_new_recipient:
-        //     !recipient.created_at ||
-        //     new Date().getTime() - new Date(recipient.created_at).getTime() <
-        //       5000, // Rough check if just created
-        // },
       };
     } catch (error) {
       return {
