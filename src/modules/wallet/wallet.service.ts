@@ -78,7 +78,7 @@ export class WalletService {
         },
       });
 
-      console.log('Active cards for user:', userCards);
+      // console.log('Active cards for user:', userCards);
 
       // Get detailed info from Stripe for each card
       const cardsWithDetails = await Promise.all(
@@ -194,16 +194,17 @@ export class WalletService {
         throw new NotFoundException('Card not found');
       }
 
-      // Detach from Stripe customer
-      await StripePayment.detachPaymentMethod(card.payment_method_id);
+      // Check if payment method is attached before detaching
+      const stripePaymentMethod = await StripePayment.getPaymentMethod(
+        card.payment_method_id,
+      );
+      if (stripePaymentMethod.customer) {
+        await StripePayment.detachPaymentMethod(card.payment_method_id);
+      }
 
-      // Soft delete from database
-      await this.prisma.userPaymentMethod.update({
+      // Hard delete from database
+      await this.prisma.userPaymentMethod.delete({
         where: { id: cardId },
-        data: {
-          is_active: false,
-          deleted_at: new Date(),
-        },
       });
 
       return {
@@ -211,6 +212,7 @@ export class WalletService {
         message: 'Card removed successfully',
       };
     } catch (error) {
+      console.log('error', error);
       if (error instanceof NotFoundException) {
         throw error;
       }
@@ -257,6 +259,4 @@ export class WalletService {
       return false;
     }
   }
-
-
 }

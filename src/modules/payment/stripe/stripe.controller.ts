@@ -71,6 +71,14 @@ export class StripeController {
           const failedPayout = event.data.object;
           console.log(failedPayout);
           break;
+        case 'payment_method.attached':
+          const attachedPaymentMethod = event.data.object;
+          console.log('payment_method.attached');
+          break;
+        case 'payment_method.detached':
+          const detachedPaymentMethod = event.data.object;
+          console.log('payment_method.detached');
+          break;
         default:
           console.log(`Unhandled event type ${event.type}`);
       }
