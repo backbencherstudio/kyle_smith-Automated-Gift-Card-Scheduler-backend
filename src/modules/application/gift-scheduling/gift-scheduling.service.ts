@@ -176,7 +176,7 @@ export class GiftSchedulingService {
         gift_card_code: decryptedCode,
         user_id: user_id,
         gift_scheduling_id: schedule.id,
-        delay: 10000,
+        delay: delay,
       });
       // await this.giftSchedulingMailService.sendGiftEmail(testData);
 

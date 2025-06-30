@@ -288,6 +288,30 @@ export class GiftRecipientService {
   }
 
   /**
+   * Helper function to format birthday to full readable format (12 May 1998)
+   */
+  private formatBirthdayFull(birthdayDate: Date): string {
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    const day = birthdayDate.getDate();
+    const month = months[birthdayDate.getMonth()];
+    const year = birthdayDate.getFullYear();
+    return `${day} ${month} ${year}`;
+  }
+
+  /**
    * Helper function to build birthday filter for month and day
    */
   private buildBirthdayFilter(month?: number, day?: number) {
@@ -326,6 +350,19 @@ export class GiftRecipientService {
     if (hasPending) return 'pending';
     if (hasSent) return 'sent';
     return 'none';
+  }
+
+  /**
+   * Helper function to calculate total amount received (SENT + PENDING gifts)
+   */
+  private calculateTotalAmount(giftSchedules: any[]): string {
+    const total = giftSchedules
+      .filter(
+        (g) => g.delivery_status === 'SENT' || g.delivery_status === 'PENDING',
+      )
+      .reduce((sum, gift) => sum + Number(gift.inventory?.face_value || 0), 0);
+
+    return `$${Math.round(total)}`;
   }
 
   /**
@@ -422,17 +459,21 @@ export class GiftRecipientService {
         },
       });
 
-      // ✅ TRANSFORM TO SIMPLIFIED FORMAT
-      const simplifiedData = recipients.map((recipient) => ({
+      // ✅ TRANSFORM TO ENHANCED SIMPLIFIED FORMAT WITH ADDRESS
+      const enhancedData = recipients.map((recipient) => ({
         name: recipient.name,
+        email: recipient.email,
+        address: recipient.address || null, // ✅ Added address field with null fallback
         birthday_display: this.formatBirthdayMMDD(recipient.birthday_date),
+        birthday_full: this.formatBirthdayFull(recipient.birthday_date),
         delivery_status: this.getDeliveryStatus(recipient.gift_scheduling),
         isUpcoming: this.isUpcoming(recipient.birthday_date),
+        total_amount: this.calculateTotalAmount(recipient.gift_scheduling),
       }));
 
       return {
         success: true,
-        data: simplifiedData,
+        data: enhancedData,
         total: total,
         page: page,
         limit: limit,

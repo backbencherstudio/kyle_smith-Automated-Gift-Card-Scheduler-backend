@@ -3,6 +3,8 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { FilterGiftCardsDto } from './dto/filter-gift-cards.dto';
 import { BrowseVendorsDto } from './dto/browse-vendors.dto';
 import { VendorAvailabilityDto } from './dto/vendor-availability.dto';
+import { SojebStorage } from 'src/common/lib/Disk/SojebStorage';
+import appConfig from 'src/config/app.config';
 
 @Injectable()
 export class GiftCardsService {
@@ -109,15 +111,32 @@ export class GiftCardsService {
     try {
       const vendors = await this.prisma.vendor.findMany({
         where: { is_active: true },
-        select: { id: true, name: true },
+        select: { id: true, name: true, logo: true },
       });
-      return { success: true, data: vendors };
+
+      // ✅ CLEANED: Generate logo URLs only
+      const vendors_with_logos = vendors.map((vendor) => {
+        let logo_url = null;
+        if (vendor.logo) {
+          logo_url = SojebStorage.url(
+            appConfig().storageUrl.vendor + vendor.logo,
+          );
+        }
+
+        return {
+          id: vendor.id,
+          name: vendor.name,
+          logo_url: logo_url, // ✅ Only logo_url, no redundant logo field
+        };
+      });
+
+      return { success: true, data: vendors_with_logos };
     } catch (error) {
       return { success: false, message: error.message, trace: error.stack };
     }
   }
 
-  // NEW: Browse vendors with available denominations
+  // ✅ CLEANED: Browse vendors without redundant logo field
   async browseVendors(filter: BrowseVendorsDto) {
     try {
       const { search, min_price, max_price } = filter;
@@ -154,36 +173,44 @@ export class GiftCardsService {
             if (max_price) cardWhere.selling_price.lte = max_price;
           }
 
-          // Get available denominations for this vendor
+          // Get available denominations with single selling_price
           const denominations = await this.prisma.giftCardInventory.groupBy({
             by: ['face_value'],
             where: cardWhere,
             _count: { face_value: true },
             _min: { selling_price: true },
-            _max: { selling_price: true },
+            orderBy: { face_value: 'asc' },
           });
 
-          // Get price range for this vendor
-          const price_range = await this.prisma.giftCardInventory.aggregate({
-            where: cardWhere,
-            _min: { selling_price: true },
-            _max: { selling_price: true },
-          });
+          // Get face_value range (Amazon's prices)
+          const face_value_range =
+            await this.prisma.giftCardInventory.aggregate({
+              where: cardWhere,
+              _min: { face_value: true },
+              _max: { face_value: true },
+            });
+
+          // ✅ CLEANED: Generate logo URL only
+          let logo_url = null;
+          if (vendor.logo) {
+            logo_url = SojebStorage.url(
+              appConfig().storageUrl.vendor + vendor.logo,
+            );
+          }
 
           return {
             id: vendor.id,
             name: vendor.name,
-            logo: vendor.logo,
+            logo_url: logo_url, // ✅ Only logo_url, no redundant logo field
             description: vendor.description,
             available_denominations: denominations.map((d) => ({
               face_value: d.face_value,
               available_count: d._count.face_value,
-              min_price: d._min.selling_price,
-              max_price: d._max.selling_price,
+              selling_price: d._min.selling_price,
             })),
             price_range: {
-              min: price_range._min.selling_price || 0,
-              max: price_range._max.selling_price || 0,
+              min: face_value_range._min.face_value || 0,
+              max: face_value_range._max.face_value || 0,
             },
             total_available_cards: denominations.reduce(
               (sum, d) => sum + d._count.face_value,
@@ -208,7 +235,7 @@ export class GiftCardsService {
     }
   }
 
-  // NEW: Get vendor details with available amounts
+  // ✅ CLEANED: Get vendor details without redundant logo field
   async getVendorDetails(vendor_id: string) {
     try {
       // Get vendor info
@@ -230,7 +257,7 @@ export class GiftCardsService {
         };
       }
 
-      // Get available denominations for this vendor
+      // Get available denominations with single selling_price and sorting
       const denominations = await this.prisma.giftCardInventory.groupBy({
         by: ['face_value'],
         where: {
@@ -239,32 +266,45 @@ export class GiftCardsService {
         },
         _count: { face_value: true },
         _min: { selling_price: true },
-        _max: { selling_price: true },
+        orderBy: { face_value: 'asc' },
       });
 
-      // Get price range
-      const price_range = await this.prisma.giftCardInventory.aggregate({
+      // Get face_value range
+      const face_value_range = await this.prisma.giftCardInventory.aggregate({
         where: {
           vendor_id: vendor_id,
           status: 'AVAILABLE',
         },
-        _min: { selling_price: true },
-        _max: { selling_price: true },
+        _min: { face_value: true },
+        _max: { face_value: true },
       });
+
+      // ✅ CLEANED: Generate logo URL only
+      let logo_url = null;
+      if (vendor.logo) {
+        logo_url = SojebStorage.url(
+          appConfig().storageUrl.vendor + vendor.logo,
+        );
+      }
 
       return {
         success: true,
         data: {
-          vendor: vendor,
+          vendor: {
+            id: vendor.id,
+            name: vendor.name,
+            logo_url: logo_url, // ✅ Only logo_url, no redundant logo field
+            description: vendor.description,
+            website: vendor.website,
+          },
           available_denominations: denominations.map((d) => ({
             face_value: d.face_value,
             available_count: d._count.face_value,
-            min_price: d._min.selling_price,
-            max_price: d._max.selling_price,
+            selling_price: d._min.selling_price,
           })),
           price_range: {
-            min: price_range._min.selling_price || 0,
-            max: price_range._max.selling_price || 0,
+            min: face_value_range._min.face_value || 0,
+            max: face_value_range._max.face_value || 0,
           },
           total_available_cards: denominations.reduce(
             (sum, d) => sum + d._count.face_value,
@@ -277,7 +317,7 @@ export class GiftCardsService {
     }
   }
 
-  // NEW: Check availability for specific vendor + amount
+  // ✅ UPDATED: Check availability with clean structure
   async checkVendorAvailability(vendor_id: string, face_value: number) {
     try {
       // Check if vendor exists and is active
@@ -302,15 +342,14 @@ export class GiftCardsService {
         },
       });
 
-      // Get price range for this specific denomination
-      const price_info = await this.prisma.giftCardInventory.aggregate({
+      // ✅ FIXED: Get single selling price for this denomination
+      const price_info = await this.prisma.giftCardInventory.findFirst({
         where: {
           vendor_id: vendor_id,
           face_value: face_value,
           status: 'AVAILABLE',
         },
-        _min: { selling_price: true },
-        _max: { selling_price: true },
+        select: { selling_price: true },
       });
 
       return {
@@ -320,10 +359,7 @@ export class GiftCardsService {
           vendor_name: vendor.name,
           face_value: face_value,
           available_count: available_count,
-          price_range: {
-            min: price_info._min.selling_price || 0,
-            max: price_info._max.selling_price || 0,
-          },
+          selling_price: price_info?.selling_price || 0, // ✅ Single selling_price
           is_available: available_count > 0,
         },
       };
