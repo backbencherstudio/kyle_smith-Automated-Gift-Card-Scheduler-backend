@@ -9,6 +9,7 @@ import { ExampleModule } from './example/example.module';
 import { VendorModule } from './vendor/vendor.module';
 import { GiftCardInventoryModule } from './gift-card-inventory/gift-card-inventory.module';
 import { InventoryTransactionModule } from './inventory-transaction/inventory-transaction.module';
+import { AdminDashboardModule } from './admin-dashboard/admin-dashboard.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { InventoryTransactionModule } from './inventory-transaction/inventory-tr
     VendorModule,
     GiftCardInventoryModule,
     InventoryTransactionModule,
+    AdminDashboardModule,
   ],
 })
 export class AdminModule {}

@@ -79,9 +79,12 @@ export class GiftSchedulingService {
         });
 
         if (!paymentResult.success) {
-          // Release inventory on payment failure
-          await this.releaseInventory(card.id, tx);
-          return paymentResult;
+          // ✅ ENHANCED: Handle payment failure with proper inventory cleanup
+          return await this.handlePaymentFailure({
+            paymentResult,
+            card,
+            tx,
+          });
         }
 
         // 5. Create schedule after successful payment
@@ -280,6 +283,7 @@ export class GiftSchedulingService {
         };
       }
 
+      console.log(`Card ${cardId} reserved successfully`);
       return { success: true };
     } catch (error) {
       return {
@@ -294,12 +298,97 @@ export class GiftSchedulingService {
    */
   private async releaseInventory(cardId: string, tx: any) {
     try {
-      await tx.giftCardInventory.update({
-        where: { id: cardId },
+      const result = await tx.giftCardInventory.updateMany({
+        where: {
+          id: cardId,
+          status: 'RESERVED', // Only release if currently reserved
+        },
         data: { status: 'AVAILABLE' },
       });
+
+      if (result.count > 0) {
+        console.log(`Card ${cardId} released back to available`);
+      } else {
+        console.log(`Card ${cardId} was not in reserved status`);
+      }
     } catch (error) {
       console.error('Failed to release inventory:', error);
+    }
+  }
+
+  /**
+   * Mark inventory as sold (after successful payment and gift scheduling)
+   */
+  private async markInventoryAsSold(cardId: string, tx: any) {
+    try {
+      const result = await tx.giftCardInventory.updateMany({
+        where: {
+          id: cardId,
+          status: 'RESERVED', // Only mark as sold if currently reserved
+        },
+        data: { status: 'USED' },
+      });
+
+      if (result.count > 0) {
+        console.log(`Card ${cardId} marked as sold`);
+      }
+    } catch (error) {
+      console.error('Failed to mark inventory as sold:', error);
+    }
+  }
+
+  /**
+   * Simple payment failure handling with proper inventory management
+   */
+  private async handlePaymentFailure({
+    paymentResult,
+    card,
+    tx,
+  }: {
+    paymentResult: any;
+    card: any;
+    tx: any;
+  }) {
+    try {
+      console.log('Payment failed, releasing inventory:', card.id);
+
+      // 1. ✅ CRITICAL: Release inventory back to available
+      await this.releaseInventory(card.id, tx);
+
+      // 2. Update payment transaction status to failed
+      if (paymentResult.data?.payment_intent_id) {
+        await tx.paymentTransaction.updateMany({
+          where: { reference_number: paymentResult.data.payment_intent_id },
+          data: {
+            status: 'failed',
+            raw_status: paymentResult.data.payment_status || 'failed',
+          },
+        });
+      }
+
+      // 3. Create inventory adjustment transaction for audit trail
+      await tx.inventoryTransaction.create({
+        data: {
+          inventory_id: card.id,
+          transaction_type: 'ADJUSTMENT',
+          quantity: 1,
+          unit_price: card.selling_price,
+          total_amount: card.selling_price,
+          user_id: paymentResult.metadata?.user_id,
+          notes: 'Gift card returned to inventory due to payment failure',
+        },
+      });
+
+      return {
+        success: false,
+        message: `Payment failed: ${paymentResult.message}`,
+      };
+    } catch (error) {
+      console.error('Error handling payment failure:', error);
+      return {
+        success: false,
+        message: 'Payment failed',
+      };
     }
   }
 
@@ -424,7 +513,10 @@ export class GiftSchedulingService {
         },
       });
 
-      // ✅ NEW: Create inventory sale transaction
+      // 3. ✅ CRITICAL: Mark inventory as sold (not just reserved)
+      await this.markInventoryAsSold(card.id, tx);
+
+      // 4. Create inventory sale transaction
       await tx.inventoryTransaction.create({
         data: {
           inventory_id: card.id,
@@ -437,13 +529,13 @@ export class GiftSchedulingService {
         },
       });
 
-      // 3. Update payment transaction with inventory reference
+      // 5. Update payment transaction with inventory reference
       await tx.paymentTransaction.updateMany({
         where: { reference_number: payment_intent_id },
         data: { inventory_id: card.id },
       });
 
-      // 4. Send email
+      // 6. Send email
       const sender = await tx.user.findUnique({
         where: { id: user_id },
         select: { name: true, email: true },
