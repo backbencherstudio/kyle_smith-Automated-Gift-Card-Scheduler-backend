@@ -175,8 +175,14 @@ export class QueueMonitoringService {
   /**
    * Get user's scheduled gifts with status
    */
-  async getUserGifts(userId: string): Promise<UserGiftsDto> {
+  async getUserGifts(
+    userId: string,
+    page = 1,
+    limit = 10,
+    query?: string,
+  ): Promise<UserGiftsDto> {
     try {
+      // console.log('limit:', limit);
       // Step 1: Get all active and completed jobs from Redis
       const statuses: ('waiting' | 'active' | 'delayed' | 'completed')[] = [
         'waiting',
@@ -185,23 +191,23 @@ export class QueueMonitoringService {
         'completed', // Include completed jobs from Redis
       ];
 
-      this.logger.debug(
-        `Getting jobs for user ${userId} with statuses: ${statuses.join(', ')}`,
-      );
+        // this.logger.debug(
+        //   `Getting jobs for user ${userId} with statuses: ${statuses.join(', ')}`,
+        // );
 
       const activeJobs = (
         await Promise.all(
           statuses.map(async (status) => {
             const jobs = await this.giftQueue.getJobs([status], 0, 1000);
-            this.logger.debug(
-              `Found ${jobs.length} jobs with status: ${status}`,
-            );
+            // this.logger.debug(
+            //   `Found ${jobs.length} jobs with status: ${status}`,
+            // );
             return jobs;
           }),
         )
       ).flat();
 
-      this.logger.debug(`Total jobs found in Redis: ${activeJobs.length}`);
+      // this.logger.debug(`Total jobs found in Redis: ${activeJobs.length}`);
 
       // Debug: Log ALL jobs and their data structure
       activeJobs.forEach((job, index) => {
@@ -210,20 +216,20 @@ export class QueueMonitoringService {
         const jobStatus = this.getJobStatus(job);
         const hasDelay = job.delay > 0;
 
-        this.logger.debug(`Job ${index + 1}:`, {
-          jobId: job.id,
-          jobStatus: jobStatus,
-          hasDelay: hasDelay,
-          delay: job.delay,
-          user_id: jobUserId,
-          lookingFor: userId,
-          matches: jobUserId === userId,
-          data: {
-            context: context,
-            to: job.data?.to,
-            subject: job.data?.subject,
-          },
-        });
+        // this.logger.debug(`Job ${index + 1}:`, {
+        //   jobId: job.id,
+        //   jobStatus: jobStatus,
+        //   hasDelay: hasDelay,
+        //   delay: job.delay,
+        //   user_id: jobUserId,
+        //   lookingFor: userId,
+        //   matches: jobUserId === userId,
+        //   data: {
+        //     context: context,
+        //     to: job.data?.to,
+        //     subject: job.data?.subject,
+        //   },
+        // });
       });
 
       // Filter for this user (comprehensive logic)
@@ -233,17 +239,17 @@ export class QueueMonitoringService {
         const matches = jobUserId === userId;
 
         if (matches) {
-          this.logger.debug(
-            `✅ Found matching job for user ${userId}: Job ID ${job.id}, Status: ${this.getJobStatus(job)}`,
-          );
+          // this.logger.debug(
+          //   `✅ Found matching job for user ${userId}: Job ID ${job.id}, Status: ${this.getJobStatus(job)}`,
+          // );
         }
 
         return matches;
       });
 
-      this.logger.debug(
-        `Filtered to ${userActiveJobs.length} jobs for user ${userId}`,
-      );
+      // this.logger.debug(
+      //   `Filtered to ${userActiveJobs.length} jobs for user ${userId}`,
+      // );
 
       // Step 2: Get completed jobs from DB for this user
       const completedJobs = await this.prisma.queueJobHistory.findMany({
@@ -251,38 +257,70 @@ export class QueueMonitoringService {
         orderBy: { completed_at: 'desc' },
       });
 
-      this.logger.debug(
-        `Found ${completedJobs.length} completed jobs in DB for user ${userId}`,
-      );
+      // this.logger.debug(
+      //   `Found ${completedJobs.length} completed jobs in DB for user ${userId}`,
+      // );
 
       // Step 3: Combine and format (Redis jobs first, then DB jobs)
       const activeGifts = userActiveJobs.map((job) => {
         const gift = this.mapJobToUserGiftDto(job);
-        this.logger.debug(`Mapped Redis job ${job.id} to gift:`, gift);
+        // this.logger.debug(`Mapped Redis job ${job.id} to gift:`, gift);
         return gift;
       });
 
       const completedGifts = completedJobs.map((job) => {
         const gift = this.mapCompletedJobToUserGiftDto(job);
-        this.logger.debug(`Mapped DB job ${job.job_id} to gift:`, gift);
+        // this.logger.debug(`Mapped DB job ${job.job_id} to gift:`, gift);
         return gift;
       });
 
       const allGifts = [...activeGifts, ...completedGifts];
 
-      // Step 4: Calculate summary
-      const summary = this.calculateGiftSummary(allGifts);
+      // 1. Filter by query if provided
+      let filteredGifts = allGifts;
+      if (query && query.trim() !== '') {
+        const q = query.trim().toLowerCase();
+        filteredGifts = allGifts.filter(
+          (gift) =>
+            (gift.recipient.name &&
+              gift.recipient.name.toLowerCase().includes(q)) ||
+            (gift.recipient.email &&
+              gift.recipient.email.toLowerCase().includes(q)) ||
+            (gift.giftCard.vendor &&
+              gift.giftCard.vendor.toLowerCase().includes(q)) ||
+            (gift.giftCard.code &&
+              gift.giftCard.code.toLowerCase().includes(q)) ||
+            (gift.giftCard.status &&
+              gift.giftCard.status.toLowerCase().includes(q)),
+        );
+      }
 
-      this.logger.debug(`Final result for user ${userId}:`, {
-        totalScheduled: allGifts.length,
-        activeGifts: activeGifts.length,
-        completedGifts: completedGifts.length,
-        summary: summary,
-      });
+      // 2. Pagination logic
+      const safeLimit = Math.max(1, limit || 10);
+      const safePage = Math.max(1, page || 1);
+      const totalScheduled = filteredGifts.length;
+      const totalPages =
+        totalScheduled > 0 ? Math.ceil(totalScheduled / safeLimit) : 1;
+      const start = (safePage - 1) * safeLimit;
+      const end = start + safeLimit;
+      const paginatedGifts = filteredGifts.slice(start, end);
+
+      // 3. Calculate summary (for filtered results)
+      const summary = this.calculateGiftSummary(filteredGifts);
+
+      // this.logger.debug(`Final result for user ${userId}:`, {
+      //   totalScheduled: allGifts.length,
+      //   activeGifts: activeGifts.length,
+      //   completedGifts: completedGifts.length,
+      //   summary: summary,
+      // });
 
       return {
-        totalScheduled: allGifts.length,
-        gifts: allGifts,
+        totalScheduled,
+        gifts: paginatedGifts,
+        page: safePage,
+        limit: safeLimit,
+        totalPages,
         summary,
         lastUpdated: new Date(),
       };
@@ -456,7 +494,7 @@ export class QueueMonitoringService {
       }
 
       await job.retry();
-      this.logger.log(`Retried job ${jobId}`);
+      // this.logger.log(`Retried job ${jobId}`);
 
       return {
         success: true,
@@ -505,21 +543,21 @@ export class QueueMonitoringService {
     try {
       // Note: This requires the QueueJobHistory model to be created
       // For now, we'll log the job data
-      this.logger.log(`Storing job ${job.id} in database history:`, {
-        jobId: job.id,
-        jobName: job.name,
-        jobStatus: this.getJobStatus(job),
-        jobData: job.data,
-        createdAt: job.timestamp,
-        processedAt: job.processedOn,
-        completedAt: job.finishedOn,
-        attempts: job.attemptsMade,
-        processingTime:
-          job.processedOn && job.finishedOn
-            ? job.finishedOn - job.processedOn
-            : null,
-        errorMessage: job.failedReason,
-      });
+      // this.logger.log(`Storing job ${job.id} in database history:`, {
+      //   jobId: job.id,
+      //   jobName: job.name,
+      //   jobStatus: this.getJobStatus(job),
+      //   jobData: job.data,
+      //   createdAt: job.timestamp,
+      //   processedAt: job.processedOn,
+      //   completedAt: job.finishedOn,
+      //   attempts: job.attemptsMade,
+      //   processingTime:
+      //     job.processedOn && job.finishedOn
+      //       ? job.finishedOn - job.processedOn
+      //       : null,
+      //   errorMessage: job.failedReason,
+      // });
     } catch (error) {
       this.logger.error(`Error storing job ${job.id} in history:`, error);
     }

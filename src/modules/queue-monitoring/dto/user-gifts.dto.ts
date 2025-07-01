@@ -7,6 +7,15 @@ export class UserGiftsDto {
   @ApiProperty({ description: 'User gifts with status' })
   gifts: UserGiftDto[];
 
+  @ApiProperty({ description: 'Current page number' })
+  page: number;
+
+  @ApiProperty({ description: 'Number of items per page' })
+  limit: number;
+
+  @ApiProperty({ description: 'Total number of pages' })
+  totalPages: number;
+
   @ApiProperty({ description: 'Status summary' })
   summary: {
     pending: number;

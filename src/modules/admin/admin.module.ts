@@ -10,6 +10,8 @@ import { VendorModule } from './vendor/vendor.module';
 import { GiftCardInventoryModule } from './gift-card-inventory/gift-card-inventory.module';
 import { InventoryTransactionModule } from './inventory-transaction/inventory-transaction.module';
 import { AdminDashboardModule } from './admin-dashboard/admin-dashboard.module';
+import { UserManagementModule } from './user-management/user-management.module';
+
 
 @Module({
   imports: [
@@ -24,6 +26,8 @@ import { AdminDashboardModule } from './admin-dashboard/admin-dashboard.module';
     GiftCardInventoryModule,
     InventoryTransactionModule,
     AdminDashboardModule,
+    UserManagementModule,
   ],
+  controllers: [],
 })
 export class AdminModule {}

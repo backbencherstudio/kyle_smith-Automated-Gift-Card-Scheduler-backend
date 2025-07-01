@@ -8,6 +8,7 @@ import {
   HttpStatus,
   Query,
   Delete,
+  Req,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -58,8 +59,20 @@ export class QueueMonitoringController {
     description: 'User gifts retrieved successfully',
     type: UserGiftsDto,
   })
-  async getMyGifts(@GetUser() user: any): Promise<UserGiftsDto> {
-    return this.queueMonitoringService.getUserGifts(user.userId);
+  async getMyGifts(
+    @Req() req,
+    @Query('page') page = 1,
+    @Query('limit') limit = 5,
+    @Query('query') query?: string,
+  ) {
+    const userId = req.user.userId;
+    console.log(limit);
+    return this.queueMonitoringService.getUserGifts(
+      userId,
+      Number(page),
+      Number(limit),
+      query,
+    );
   }
 
   @Get('admin-dashboard')
