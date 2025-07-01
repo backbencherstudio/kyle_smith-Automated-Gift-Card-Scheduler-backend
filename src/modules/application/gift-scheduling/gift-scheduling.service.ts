@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateGiftSchedulingDto } from './dto/create-gift-scheduling.dto';
 import { UpdateGiftSchedulingDto } from './dto/update-gift-scheduling.dto';
@@ -9,6 +9,7 @@ import { EncryptionHelper } from 'src/common/helper/encryption.helper';
 import { MailService } from 'src/mail/mail.service';
 import { GiftSchedulingMailService } from './mail/gift-scheduling-mail.service';
 import { BirthdayCalculatorService } from './birthday-calculator.service';
+import { StripePayment } from 'src/common/lib/Payment/stripe/StripePayment';
 import dayjs from 'dayjs';
 
 @Injectable()
@@ -19,12 +20,94 @@ export class GiftSchedulingService {
     private readonly birthdayCalculator: BirthdayCalculatorService,
   ) {}
 
-  async create(createDto: CreateGiftSchedulingDto, user_id: string) {
+  /**
+   * Main method that handles payment-first gift scheduling
+   */
+  async createWithPayment(
+    createDto: CreateGiftSchedulingDto,
+    user_id: string,
+    payment_method_id: string,
+  ) {
     try {
-      // 1. Validate recipient's birthday format (for recipient storage only)
+      // 1. Validate input data
+      const validationResult = await this.validateGiftSchedulingData(
+        createDto,
+        user_id,
+      );
+      if (!validationResult.success) {
+        return validationResult;
+      }
+
+      const { recipient, card, sendGiftDate, delay } = validationResult.data;
+
+      // 2. Get user's billing information
+      const user = await this.prisma.user.findUnique({
+        where: { id: user_id },
+        select: { billing_id: true, email: true, name: true },
+      });
+
+      if (!user?.billing_id) {
+        return {
+          success: false,
+          message:
+            'User billing information not found. Please contact support.',
+        };
+      }
+
+      // 3. Process payment first
+      const paymentResult = await this.processPayment({
+        amount: createDto.amount,
+        customer_id: user.billing_id,
+        payment_method_id: payment_method_id,
+        metadata: {
+          user_id: user_id,
+          vendor_id: createDto.vendor_id,
+          recipient_email: createDto.recipient.email,
+          gift_type: 'scheduled_gift',
+        },
+      });
+
+      if (!paymentResult.success) {
+        return paymentResult;
+      }
+
+      // 4. Create schedule after successful payment
+      const scheduleResult = await this.createScheduleAfterPayment({
+        createDto,
+        user_id,
+        recipient,
+        card,
+        sendGiftDate,
+        delay,
+        payment_intent_id: paymentResult.data.payment_intent_id,
+      });
+
+      return scheduleResult;
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message,
+        trace: error.stack,
+        details: {
+          vendor_id: createDto.vendor_id,
+          amount: createDto.amount,
+          recipient_email: createDto.recipient.email,
+        },
+      };
+    }
+  }
+
+  /**
+   * Validate gift scheduling data and find required resources
+   */
+  private async validateGiftSchedulingData(
+    createDto: CreateGiftSchedulingDto,
+    user_id: string,
+  ) {
+    try {
+      // 1. Validate recipient's birthday format
       const birthdayStr = createDto.recipient.birthday;
-      console.log(birthdayStr);
-      const birthday = dayjs(birthdayStr, 'YYYY-MM-DD', true); // strict parsing
+      const birthday = dayjs(birthdayStr, 'YYYY-MM-DD', true);
 
       if (!birthday.isValid()) {
         return {
@@ -33,12 +116,9 @@ export class GiftSchedulingService {
         };
       }
 
-      console.log(createDto);
-
-      // 2. Validate send_gift_date format (for scheduling calculation)
+      // 2. Validate send_gift_date format
       const sendGiftDateStr = createDto.send_gift_date;
-      console.log('Send gift date:', sendGiftDateStr);
-      const sendGiftDate = dayjs(sendGiftDateStr, 'YYYY-MM-DD', true); // strict parsing
+      const sendGiftDate = dayjs(sendGiftDateStr, 'YYYY-MM-DD', true);
 
       if (!sendGiftDate.isValid()) {
         return {
@@ -47,7 +127,7 @@ export class GiftSchedulingService {
         };
       }
 
-      // 3. Find or create recipient (check by email for the same user)
+      // 3. Find or create recipient
       let recipient = await this.prisma.giftRecipient.findFirst({
         where: {
           email: createDto.recipient.email,
@@ -55,22 +135,20 @@ export class GiftSchedulingService {
       });
 
       if (!recipient) {
-        // Create new recipient only if not found
         recipient = await this.prisma.giftRecipient.create({
           data: {
             user: { connect: { id: user_id } },
             name: createDto.recipient.name,
             email: createDto.recipient.email,
-            birthday_date: birthday.toDate(), // Use birthday for recipient storage
+            birthday_date: birthday.toDate(),
           },
         });
       } else {
-        // Optional: Update recipient name or birthday if changed
+        // Update recipient if needed
         const updateData: any = {};
         if (recipient.name !== createDto.recipient.name) {
           updateData.name = createDto.recipient.name;
         }
-        // Update birthday if changed
         if (
           recipient.birthday_date &&
           dayjs(recipient.birthday_date).format('YYYY-MM-DD') !== birthdayStr
@@ -85,7 +163,7 @@ export class GiftSchedulingService {
         }
       }
 
-      // 4. Calculate delay using send_gift_date (not birthday)
+      // 4. Calculate delay
       const delay = this.birthdayCalculator.getDelayUntilNextBirthday(
         sendGiftDate.toDate(),
       );
@@ -99,6 +177,7 @@ export class GiftSchedulingService {
         },
         include: { vendor: true },
       });
+
       if (!card) {
         return {
           success: false,
@@ -106,61 +185,145 @@ export class GiftSchedulingService {
         };
       }
 
-      // 6. Find or create the Gift record for this inventory
+      return {
+        success: true,
+        data: {
+          recipient,
+          card,
+          sendGiftDate,
+          delay,
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message,
+      };
+    }
+  }
+
+  /**
+   * Process payment using Stripe
+   */
+  private async processPayment({
+    amount,
+    customer_id,
+    payment_method_id,
+    metadata,
+  }: {
+    amount: number;
+    customer_id: string;
+    payment_method_id: string;
+    metadata: any;
+  }) {
+    try {
+      const paymentIntent = await StripePayment.createPaymentWithPaymentMethod({
+        amount: amount,
+        currency: 'usd',
+        customer_id: customer_id,
+        payment_method_id: payment_method_id,
+        metadata: metadata,
+      });
+
+      // Log payment transaction
+      await this.prisma.paymentTransaction.create({
+        data: {
+          user_id: metadata.user_id,
+          reference_number: paymentIntent.id,
+          status: paymentIntent.status,
+          raw_status: paymentIntent.status,
+          amount: amount,
+          currency: 'usd',
+          paid_amount: paymentIntent.amount / 100,
+          paid_currency: paymentIntent.currency,
+          provider: 'stripe',
+          type: 'gift_scheduling',
+          transaction_category: 'USER_SALE',
+        },
+      });
+
+      return {
+        success: true,
+        data: {
+          payment_intent_id: paymentIntent.id,
+          payment_status: paymentIntent.status,
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Payment failed: ${error.message}`,
+      };
+    }
+  }
+
+  /**
+   * Create schedule after successful payment
+   */
+  private async createScheduleAfterPayment({
+    createDto,
+    user_id,
+    recipient,
+    card,
+    sendGiftDate,
+    delay,
+    payment_intent_id,
+  }: {
+    createDto: CreateGiftSchedulingDto;
+    user_id: string;
+    recipient: any;
+    card: any;
+    sendGiftDate: any;
+    delay: number;
+    payment_intent_id: string;
+  }) {
+    try {
+      // 1. Find or create the Gift record
       let gift = await this.prisma.gift.findFirst({
         where: { inventory_id: card.id },
       });
 
       if (!gift) {
-        try {
-          gift = await this.prisma.gift.create({
-            data: { inventory: { connect: { id: card.id } } },
-          });
-        } catch (giftError) {
-          return {
-            success: false,
-            message: `Failed to create gift record: ${giftError.message}`,
-            trace: giftError.stack,
-          };
-        }
+        gift = await this.prisma.gift.create({
+          data: { inventory: { connect: { id: card.id } } },
+        });
       }
 
-      // 7. Create schedule using send_gift_date for scheduled_date
+      // 2. Create schedule
       const schedule = await this.prisma.giftScheduling.create({
         data: {
           user: { connect: { id: user_id } },
           recipient: { connect: { id: recipient.id } },
           gift: { connect: { id: gift.id } },
           inventory: { connect: { id: card.id } },
-          scheduled_date: sendGiftDate.toDate(), // Use send_gift_date for scheduling
+          scheduled_date: sendGiftDate.toDate(),
           custom_message: createDto.custom_message,
           delivery_status: 'PENDING',
           delivery_email: recipient.email,
-          is_notify: createDto.is_notify ?? true, // Add is_notify field
+          is_notify: createDto.is_notify ?? true,
         },
       });
 
-      // 8. Reserve the card
+      // 3. Reserve the card
       await this.prisma.giftCardInventory.update({
         where: { id: card.id },
         data: { status: 'RESERVED' },
       });
 
-      // Fetch sender (user) info
-      const sender = await this.prisma.user.findUnique({
-        where: { id: user_id },
+      // 4. Update payment transaction with inventory reference
+      await this.prisma.paymentTransaction.updateMany({
+        where: { reference_number: payment_intent_id },
+        data: { inventory_id: card.id },
       });
 
-      // Decrypt the card code
+      // 5. Send email
+      const sender = await this.prisma.user.findUnique({
+        where: { id: user_id },
+        select: { name: true, email: true },
+      });
+
       const decryptedCode = EncryptionHelper.decrypt(card.card_code);
 
-      const delayInfo = this.birthdayCalculator.getDelayInfo(
-        sendGiftDate.toDate(),
-      );
-      console.log(delayInfo.dhmsFormat);
-      console.log(delay);
-
-      // Call the dedicated mail service with is_notify
       await this.giftSchedulingMailService.sendGiftEmail({
         to: recipient.email,
         recipient_name: recipient.name,
@@ -174,23 +337,21 @@ export class GiftSchedulingService {
         user_id: user_id,
         gift_scheduling_id: schedule.id,
         delay: delay,
-        is_notify: schedule.is_notify, // Pass is_notify to mail service
+        is_notify: schedule.is_notify,
       });
 
       return {
         success: true,
-        message: 'Gift scheduled successfully',
+        message: 'Gift scheduled successfully after payment confirmation',
+        data: {
+          schedule_id: schedule.id,
+          payment_intent_id: payment_intent_id,
+        },
       };
     } catch (error) {
       return {
         success: false,
-        message: error.message,
-        trace: error.stack,
-        details: {
-          vendor_id: createDto.vendor_id,
-          amount: createDto.amount,
-          recipient_email: createDto.recipient.email,
-        },
+        message: `Failed to create schedule after payment: ${error.message}`,
       };
     }
   }

@@ -473,4 +473,38 @@ export class StripePayment {
       throw new Error(`Failed to retrieve payment method: ${error.message}`);
     }
   }
+
+  /**
+   * Create and confirm payment using payment method
+   */
+  static async createPaymentWithPaymentMethod({
+    amount,
+    currency,
+    customer_id,
+    payment_method_id,
+    metadata,
+  }: {
+    amount: number;
+    currency: string;
+    customer_id: string;
+    payment_method_id: string;
+    metadata?: stripe.MetadataParam;
+  }): Promise<stripe.PaymentIntent> {
+    try {
+      // Create PaymentIntent with the payment method
+      const paymentIntent = await Stripe.paymentIntents.create({
+        amount: amount * 100, // amount in cents
+        currency: currency,
+        customer: customer_id,
+        payment_method: payment_method_id,
+        confirm: true, // Confirm immediately
+        return_url: `${appConfig().app.url}/payment/return`,
+        metadata: metadata,
+      });
+
+      return paymentIntent;
+    } catch (error) {
+      throw new Error(`Payment failed: ${error.message}`);
+    }
+  }
 }

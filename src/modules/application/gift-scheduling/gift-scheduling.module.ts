@@ -8,14 +8,16 @@ import { GiftSchedulingMailProcessor } from './mail/gift-scheduling-mail.process
 import { MailerModule } from '@nestjs-modules/mailer';
 import { BirthdayCalculatorService } from './birthday-calculator.service';
 import { QueueMonitoringModule } from 'src/modules/queue-monitoring/queue-monitoring.module';
+import { WalletModule } from 'src/modules/wallet/wallet.module';
 
 @Module({
   imports: [
     BullModule.registerQueue({
       name: 'gift-scheduling-mail-queue',
     }),
-    MailerModule, // for MailerService 
+    MailerModule, // for MailerService
     QueueMonitoringModule,
+    WalletModule, // Add wallet module for payment method access
   ],
   controllers: [GiftSchedulingController],
   providers: [

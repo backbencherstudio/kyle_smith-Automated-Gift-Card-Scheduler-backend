@@ -295,4 +295,38 @@ export class WalletService {
       return false;
     }
   }
+
+  async getDefaultCardForPayment(userId: string) {
+    try {
+      const defaultCard = await this.prisma.userPaymentMethod.findFirst({
+        where: {
+          user_id: userId,
+          is_default: true,
+          is_active: true,
+        },
+        select: {
+          id: true,
+          payment_method_id: true,
+          stripe_customer_id: true,
+          is_default: true,
+        },
+      });
+
+      if (!defaultCard) {
+        throw new BadRequestException(
+          'No default payment method found. Please add a card to your wallet.',
+        );
+      }
+
+      return {
+        success: true,
+        data: defaultCard,
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to get default payment method');
+    }
+  }
 }
