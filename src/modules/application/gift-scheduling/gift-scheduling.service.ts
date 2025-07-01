@@ -21,82 +21,107 @@ export class GiftSchedulingService {
   ) {}
 
   /**
-   * Main method that handles payment-first gift scheduling
+   * Main method that handles payment-first gift scheduling with transaction safety
    */
   async createWithPayment(
     createDto: CreateGiftSchedulingDto,
     user_id: string,
     payment_method_id: string,
   ) {
-    try {
-      // 1. Validate input data
-      const validationResult = await this.validateGiftSchedulingData(
-        createDto,
-        user_id,
-      );
-      if (!validationResult.success) {
-        return validationResult;
-      }
+    return await this.prisma.$transaction(async (tx) => {
+      try {
+        // 1. Validate input data
+        const validationResult = await this.validateGiftSchedulingData(
+          createDto,
+          user_id,
+          tx,
+        );
+        if (!validationResult.success) {
+          return validationResult;
+        }
 
-      const { recipient, card, sendGiftDate, delay } = validationResult.data;
+        const { recipient, card, sendGiftDate, delay } = validationResult.data;
 
-      // 2. Get user's billing information
-      const user = await this.prisma.user.findUnique({
-        where: { id: user_id },
-        select: { billing_id: true, email: true, name: true },
-      });
+        // 2. Get user's billing information
+        const user = await tx.user.findUnique({
+          where: { id: user_id },
+          select: { billing_id: true, email: true, name: true },
+        });
 
-      if (!user?.billing_id) {
+        if (!user?.billing_id) {
+          return {
+            success: false,
+            message:
+              'User billing information not found. Please contact support.',
+          };
+        }
+
+        // 3. Reserve inventory atomically
+        const reservedCard = await this.reserveInventoryAtomically(card.id, tx);
+        if (!reservedCard.success) {
+          return reservedCard;
+        }
+
+        // 4. Process payment with SELLING PRICE
+        const paymentResult = await this.processPayment({
+          amount: Number(card.selling_price),
+          customer_id: user.billing_id,
+          payment_method_id: payment_method_id,
+          metadata: {
+            user_id: user_id,
+            vendor_id: createDto.vendor_id,
+            recipient_email: createDto.recipient.email,
+            gift_type: 'scheduled_gift',
+            face_value: Number(card.face_value),
+            selling_price: Number(card.selling_price),
+            inventory_id: card.id,
+          },
+        });
+
+        if (!paymentResult.success) {
+          // Release inventory on payment failure
+          await this.releaseInventory(card.id, tx);
+          return paymentResult;
+        }
+
+        // 5. Create schedule after successful payment
+        const scheduleResult = await this.createScheduleAfterPayment({
+          createDto,
+          user_id,
+          recipient,
+          card,
+          sendGiftDate,
+          delay,
+          payment_intent_id: paymentResult.data.payment_intent_id,
+          tx,
+        });
+
+        // ✅ SIMPLIFIED: Return only essential data
+        return {
+          success: true,
+          message: 'Gift scheduled successfully',
+          data: {
+            schedule_id: scheduleResult.data.schedule_id,
+            payment_intent_id: paymentResult.data.payment_intent_id,
+            payment_status: paymentResult.data.payment_status,
+            face_value: Number(card.face_value),
+            selling_price: Number(card.selling_price),
+            vendor_name: card.vendor.name,
+            recipient_name: recipient.name,
+            scheduled_date: sendGiftDate.toDate(),
+          },
+        };
+      } catch (error) {
         return {
           success: false,
-          message:
-            'User billing information not found. Please contact support.',
+          message: error.message,
+          details: {
+            vendor_id: createDto.vendor_id,
+            requested_amount: createDto.amount,
+          },
         };
       }
-
-      // 3. Process payment with SELLING PRICE (not face_value)
-      const paymentResult = await this.processPayment({
-        amount: Number(card.selling_price),
-        customer_id: user.billing_id,
-        payment_method_id: payment_method_id,
-        metadata: {
-          user_id: user_id,
-          vendor_id: createDto.vendor_id,
-          recipient_email: createDto.recipient.email,
-          gift_type: 'scheduled_gift',
-          face_value: Number(card.face_value),
-          selling_price: Number(card.selling_price),
-        },
-      });
-
-      if (!paymentResult.success) {
-        return paymentResult;
-      }
-
-      // 4. Create schedule after successful payment
-      const scheduleResult = await this.createScheduleAfterPayment({
-        createDto,
-        user_id,
-        recipient,
-        card,
-        sendGiftDate,
-        delay,
-        payment_intent_id: paymentResult.data.payment_intent_id,
-      });
-
-      return scheduleResult;
-    } catch (error) {
-      return {
-        success: false,
-        message: error.message,
-        trace: error.stack,
-        details: {
-          vendor_id: createDto.vendor_id,
-          requested_amount: createDto.amount,
-          recipient_email: createDto.recipient.email,
-        },
-      };
-    }
+    });
   }
 
   /**
@@ -105,7 +130,10 @@ export class GiftSchedulingService {
   private async validateGiftSchedulingData(
     createDto: CreateGiftSchedulingDto,
     user_id: string,
+    tx?: any,
   ) {
+    const prismaClient = tx || this.prisma;
+
     try {
       // 1. Validate recipient's birthday format
       const birthdayStr = createDto.recipient.birthday;
@@ -130,14 +158,14 @@ export class GiftSchedulingService {
       }
 
       // 3. Find or create recipient
-      let recipient = await this.prisma.giftRecipient.findFirst({
+      let recipient = await prismaClient.giftRecipient.findFirst({
         where: {
           email: createDto.recipient.email,
         },
       });
 
       if (!recipient) {
-        recipient = await this.prisma.giftRecipient.create({
+        recipient = await prismaClient.giftRecipient.create({
           data: {
             user: { connect: { id: user_id } },
             name: createDto.recipient.name,
@@ -158,7 +186,7 @@ export class GiftSchedulingService {
           updateData.birthday_date = birthday.toDate();
         }
         if (Object.keys(updateData).length > 0) {
-          recipient = await this.prisma.giftRecipient.update({
+          recipient = await prismaClient.giftRecipient.update({
             where: { id: recipient.id },
             data: updateData,
           });
@@ -170,22 +198,50 @@ export class GiftSchedulingService {
         sendGiftDate.toDate(),
       );
 
-      // 5. Find available inventory
-      const card = await this.prisma.giftCardInventory.findFirst({
+      // ✅ ENHANCED: Find available and non-expired inventory
+      const card = await prismaClient.giftCardInventory.findFirst({
         where: {
           vendor_id: createDto.vendor_id,
           face_value: createDto.amount,
           status: 'AVAILABLE',
+          // ✅ NEW: Filter out expired cards at query level
+          OR: [
+            { expiry_date: null }, // Cards with no expiry date
+            { expiry_date: { gt: new Date() } }, // Cards not yet expired
+          ],
         },
         include: { vendor: true },
+        orderBy: [
+          { expiry_date: 'asc' }, // Prioritize cards expiring soon (FIFO for expiry)
+          { created_at: 'asc' }, // Then by creation date (FIFO for inventory)
+        ],
       });
 
       if (!card) {
         return {
           success: false,
-          message: 'No available gift card for this vendor and amount',
+          message: `No available gift card for vendor ${createDto.vendor_id} with face value $${createDto.amount}. All cards may be expired or out of stock.`,
         };
       }
+
+      // ✅ ENHANCED: Validate selling price (no expiry check needed)
+      if (Number(card.selling_price) <= 0) {
+        return {
+          success: false,
+          message: 'Invalid selling price for selected gift card',
+        };
+      }
+
+      // ✅ NEW: Log selected card for debugging
+      console.log('Selected card:', {
+        id: card.id,
+        face_value: card.face_value,
+        selling_price: card.selling_price,
+        expiry_date: card.expiry_date,
+        days_until_expiry: card.expiry_date
+          ? dayjs(card.expiry_date).diff(dayjs(), 'day')
+          : 'No expiry',
+      });
 
       return {
         success: true,
@@ -205,7 +261,50 @@ export class GiftSchedulingService {
   }
 
   /**
-   * Process payment using Stripe
+   * Reserve inventory atomically to prevent race conditions
+   */
+  private async reserveInventoryAtomically(cardId: string, tx: any) {
+    try {
+      const updatedCard = await tx.giftCardInventory.updateMany({
+        where: {
+          id: cardId,
+          status: 'AVAILABLE', // Only update if still available
+        },
+        data: { status: 'RESERVED' },
+      });
+
+      if (updatedCard.count === 0) {
+        return {
+          success: false,
+          message: 'Gift card is no longer available',
+        };
+      }
+
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to reserve inventory: ${error.message}`,
+      };
+    }
+  }
+
+  /**
+   * Release inventory back to available status
+   */
+  private async releaseInventory(cardId: string, tx: any) {
+    try {
+      await tx.giftCardInventory.update({
+        where: { id: cardId },
+        data: { status: 'AVAILABLE' },
+      });
+    } catch (error) {
+      console.error('Failed to release inventory:', error);
+    }
+  }
+
+  /**
+   * Process payment using Stripe with enhanced status tracking
    */
   private async processPayment({
     amount,
@@ -227,40 +326,57 @@ export class GiftSchedulingService {
         metadata: metadata,
       });
 
+      // ✅ ENHANCED: Check actual payment status
+      const paymentStatus = paymentIntent.status;
+      const isPaymentConfirmed = ['succeeded', 'processing'].includes(
+        paymentStatus,
+      );
+
       // Log payment transaction
       await this.prisma.paymentTransaction.create({
         data: {
           user_id: metadata.user_id,
           reference_number: paymentIntent.id,
-          status: paymentIntent.status,
-          raw_status: paymentIntent.status,
-          amount: amount,
+          status: paymentStatus,
+          raw_status: paymentStatus,
+          amount: metadata.face_value,
           currency: 'usd',
           paid_amount: paymentIntent.amount / 100,
           paid_currency: paymentIntent.currency,
           provider: 'stripe',
           type: 'gift_scheduling',
           transaction_category: 'USER_SALE',
+          inventory_id: metadata.inventory_id,
         },
       });
 
       return {
-        success: true,
+        success: isPaymentConfirmed,
         data: {
           payment_intent_id: paymentIntent.id,
-          payment_status: paymentIntent.status,
+          payment_status: paymentStatus,
+          is_confirmed: isPaymentConfirmed,
+          requires_action: paymentStatus === 'requires_action',
+          requires_payment_method: paymentStatus === 'requires_payment_method',
+          paid_amount: paymentIntent.amount / 100,
+          currency: paymentIntent.currency,
+          client_secret: paymentIntent.client_secret,
         },
+        message: isPaymentConfirmed
+          ? 'Payment confirmed successfully'
+          : `Payment status: ${paymentStatus}`,
       };
     } catch (error) {
       return {
         success: false,
         message: `Payment failed: ${error.message}`,
+        error_code: error.code,
       };
     }
   }
 
   /**
-   * Create schedule after successful payment
+   * Create schedule after successful payment with inventory transaction
    */
   private async createScheduleAfterPayment({
     createDto,
@@ -270,6 +386,7 @@ export class GiftSchedulingService {
     sendGiftDate,
     delay,
     payment_intent_id,
+    tx,
   }: {
     createDto: CreateGiftSchedulingDto;
     user_id: string;
@@ -278,21 +395,22 @@ export class GiftSchedulingService {
     sendGiftDate: any;
     delay: number;
     payment_intent_id: string;
+    tx: any;
   }) {
     try {
       // 1. Find or create the Gift record
-      let gift = await this.prisma.gift.findFirst({
+      let gift = await tx.gift.findFirst({
         where: { inventory_id: card.id },
       });
 
       if (!gift) {
-        gift = await this.prisma.gift.create({
+        gift = await tx.gift.create({
           data: { inventory: { connect: { id: card.id } } },
         });
       }
 
       // 2. Create schedule
-      const schedule = await this.prisma.giftScheduling.create({
+      const schedule = await tx.giftScheduling.create({
         data: {
           user: { connect: { id: user_id } },
           recipient: { connect: { id: recipient.id } },
@@ -306,20 +424,27 @@ export class GiftSchedulingService {
         },
       });
 
-      // 3. Reserve the card
-      await this.prisma.giftCardInventory.update({
-        where: { id: card.id },
-        data: { status: 'RESERVED' },
+      // ✅ NEW: Create inventory sale transaction
+      await tx.inventoryTransaction.create({
+        data: {
+          inventory_id: card.id,
+          transaction_type: 'SALE',
+          quantity: 1,
+          unit_price: card.selling_price,
+          total_amount: card.selling_price,
+          user_id: user_id,
+          notes: 'Gift card sale via gift scheduling',
+        },
       });
 
-      // 4. Update payment transaction with inventory reference
-      await this.prisma.paymentTransaction.updateMany({
+      // 3. Update payment transaction with inventory reference
+      await tx.paymentTransaction.updateMany({
         where: { reference_number: payment_intent_id },
         data: { inventory_id: card.id },
       });
 
-      // 5. Send email
-      const sender = await this.prisma.user.findUnique({
+      // 4. Send email
+      const sender = await tx.user.findUnique({
         where: { id: user_id },
         select: { name: true, email: true },
       });
@@ -348,6 +473,9 @@ export class GiftSchedulingService {
         data: {
           schedule_id: schedule.id,
           payment_intent_id: payment_intent_id,
+          face_value: Number(card.face_value),
+          selling_price: Number(card.selling_price),
+          vendor_name: card.vendor.name,
         },
       };
     } catch (error) {
@@ -380,16 +508,26 @@ export class GiftSchedulingService {
           where,
           skip: offset,
           take: limit,
+          include: {
+            inventory: {
+              include: { vendor: true },
+            },
+            recipient: true,
+          },
         }),
         this.prisma.giftScheduling.count({ where }),
       ]);
 
-      // Map to user-friendly output
+      // ✅ ENHANCED: Map to user-friendly output with inventory details
       const result = data.map((schedule) => ({
         id: schedule.id,
         recipient_id: schedule.recipient_id,
-        vendor_id: schedule.inventory_id,
-        face_value: undefined,
+        recipient_name: schedule.recipient.name,
+        recipient_email: schedule.recipient.email,
+        vendor_id: schedule.inventory?.vendor?.id,
+        vendor_name: schedule.inventory?.vendor?.name,
+        face_value: schedule.inventory?.face_value,
+        selling_price: schedule.inventory?.selling_price,
         scheduled_date: schedule.scheduled_date,
         delivery_status: schedule.delivery_status,
         sent_at: schedule.sent_at,
@@ -421,6 +559,12 @@ export class GiftSchedulingService {
           id,
           user_id,
         },
+        include: {
+          inventory: {
+            include: { vendor: true },
+          },
+          recipient: true,
+        },
       });
 
       if (!schedule) {
@@ -435,8 +579,12 @@ export class GiftSchedulingService {
         data: {
           id: schedule.id,
           recipient_id: schedule.recipient_id,
-          vendor_id: schedule.inventory_id,
-          face_value: undefined,
+          recipient_name: schedule.recipient.name,
+          recipient_email: schedule.recipient.email,
+          vendor_id: schedule.inventory?.vendor?.id,
+          vendor_name: schedule.inventory?.vendor?.name,
+          face_value: schedule.inventory?.face_value,
+          selling_price: schedule.inventory?.selling_price,
           scheduled_date: schedule.scheduled_date,
           delivery_status: schedule.delivery_status,
           sent_at: schedule.sent_at,
@@ -502,39 +650,57 @@ export class GiftSchedulingService {
   }
 
   async remove(id: string, user_id: string) {
-    try {
-      const schedule = await this.prisma.giftScheduling.findFirst({
-        where: { id, user_id },
-      });
+    return await this.prisma.$transaction(async (tx) => {
+      try {
+        const schedule = await tx.giftScheduling.findFirst({
+          where: { id, user_id },
+          include: {
+            inventory: true,
+          },
+        });
 
-      if (!schedule) {
+        if (!schedule) {
+          return {
+            success: false,
+            message: 'Scheduled gift not found',
+          };
+        }
+
+        // ✅ ENHANCED: Create inventory adjustment transaction for cancellation
+        await tx.inventoryTransaction.create({
+          data: {
+            inventory_id: schedule.inventory_id,
+            transaction_type: 'ADJUSTMENT',
+            quantity: 1,
+            unit_price: schedule.inventory.selling_price,
+            total_amount: schedule.inventory.selling_price,
+            user_id: user_id,
+            notes: 'Gift card returned to inventory due to cancellation',
+          },
+        });
+
+        // Release the card back to available
+        await tx.giftCardInventory.update({
+          where: { id: schedule.inventory_id },
+          data: { status: 'AVAILABLE' },
+        });
+
+        // Delete the schedule
+        await tx.giftScheduling.delete({
+          where: { id },
+        });
+
+        return {
+          success: true,
+          message: 'Gift schedule cancelled successfully',
+        };
+      } catch (error) {
         return {
           success: false,
-          message: 'Scheduled gift not found',
+          message: error.message,
+          trace: error.stack,
         };
       }
-
-      // Release the card back to available
-      await this.prisma.giftCardInventory.update({
-        where: { id: schedule.inventory_id },
-        data: { status: 'AVAILABLE' },
-      });
-
-      // Delete the schedule
-      await this.prisma.giftScheduling.delete({
-        where: { id },
-      });
-
-      return {
-        success: true,
-        message: 'Gift schedule cancelled successfully',
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: error.message,
-        trace: error.stack,
-      };
-    }
+    });
   }
 }
