@@ -54,9 +54,9 @@ export class GiftSchedulingService {
         };
       }
 
-      // 3. Process payment first
+      // 3. Process payment with SELLING PRICE (not face_value)
       const paymentResult = await this.processPayment({
-        amount: createDto.amount,
+        amount: Number(card.selling_price),
         customer_id: user.billing_id,
         payment_method_id: payment_method_id,
         metadata: {
@@ -64,6 +64,8 @@ export class GiftSchedulingService {
           vendor_id: createDto.vendor_id,
           recipient_email: createDto.recipient.email,
           gift_type: 'scheduled_gift',
+          face_value: Number(card.face_value),
+          selling_price: Number(card.selling_price),
         },
       });
 
@@ -90,7 +92,7 @@ export class GiftSchedulingService {
         trace: error.stack,
         details: {
           vendor_id: createDto.vendor_id,
-          amount: createDto.amount,
+          requested_amount: createDto.amount,
           recipient_email: createDto.recipient.email,
         },
       };
