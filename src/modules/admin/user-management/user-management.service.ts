@@ -5,22 +5,43 @@ import { PrismaService } from 'src/prisma/prisma.service';
 export class UserManagementService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listUsers(page = 1, limit = 10, query?: string) {
-    const skip = (page - 1) * limit;
+  async listUsers(
+    page: number = 1,
+    limit: number = 10,
+    query?: string,
+    onlyWithData: boolean = false,
+  ) {
+    // Defensive defaults
+    const safePage = Math.max(1, Number(page) || 1);
+    const safeLimit = Math.max(1, Number(limit) || 10);
+    const skip = (safePage - 1) * safeLimit;
+
+    // Build the where clause
     const where: any = {};
 
-    if (query) {
+    // Search by name or email if query is provided
+    if (query && query.trim() !== '') {
       where.OR = [
         { name: { contains: query, mode: 'insensitive' } },
         { email: { contains: query, mode: 'insensitive' } },
       ];
     }
 
+    // Optionally, only include users with at least one gift or contact
+    if (onlyWithData) {
+      where.OR = [
+        ...(where.OR || []),
+        { gift_scheduling: { some: {} } },
+        { gift_recipients: { some: {} } },
+      ];
+    }
+
+    // Fetch users and total count in parallel
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
         skip,
-        take: limit,
+        take: safeLimit,
         orderBy: { created_at: 'desc' },
         select: {
           id: true,
@@ -40,10 +61,19 @@ export class UserManagementService {
       this.prisma.user.count({ where }),
     ]);
 
-    
+    const usersTest = await this.prisma.user.findUnique({
+      where: { id: 'cmcab7hqd0000uakki9b7asv1' },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        gift_scheduling: { select: { id: true } },
+        gift_recipients: { select: { id: true } },
+      },
+    });
+    console.log(usersTest);
 
-    console.log(users);
-
+    // Aggregate stats for each user
     const usersWithStats = users.map((user) => {
       const totalGiftSend = user.gift_scheduling.filter(
         (g) => g.delivery_status === 'SENT',
@@ -63,12 +93,15 @@ export class UserManagementService {
       };
     });
 
+    // Calculate total pages
+    const totalPages = total > 0 ? Math.ceil(total / safeLimit) : 1;
+
     return {
       users: usersWithStats,
-      page,
-      limit,
+      page: safePage,
+      limit: safeLimit,
       total,
-      totalPages: Math.ceil(total / limit),
+      totalPages,
     };
   }
 

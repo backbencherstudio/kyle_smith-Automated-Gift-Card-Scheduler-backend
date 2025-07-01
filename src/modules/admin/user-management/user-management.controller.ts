@@ -25,11 +25,13 @@ export class UserManagementController {
     @Query('page') page = 1,
     @Query('limit') limit = 10,
     @Query('query') query?: string,
+    @Query('onlyWithData') onlyWithData?: string,
   ) {
     return this.userManagementService.listUsers(
       Number(page),
       Number(limit),
       query,
+      onlyWithData === 'true',
     );
   }
 
