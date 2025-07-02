@@ -147,7 +147,7 @@ export class AuthController {
       const frontendUrl =
         appConfig().app.client_app_url || 'http://localhost:3000';
       const redirectUrl = `${frontendUrl}/auth/google/callback?token=${token}&user=${encodeURIComponent(JSON.stringify(result.user))}`;
-
+      // console.log(redirectUrl);
       return res.redirect(redirectUrl);
     } catch (error) {
       // Handle error redirect

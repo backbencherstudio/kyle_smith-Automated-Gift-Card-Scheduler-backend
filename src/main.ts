@@ -20,6 +20,7 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
   'https://kzmp1lbamr3ub2abo3ep.lite.vusercontent.net',
   'https://*.vusercontent.net',
   'https://*.vercel.app',
+  'https://crops-surely-gzip-utc.trycloudflare.com',
 ];
 
 async function bootstrap() {

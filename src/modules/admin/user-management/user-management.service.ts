@@ -106,6 +106,17 @@ export class UserManagementService {
   }
 
   async getUserGiftHistory(userId: string) {
+    // Fetch sender info
+    const sender = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true, email: true },
+    });
+
+    if (!sender) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Fetch gifts
     const gifts = await this.prisma.giftScheduling.findMany({
       where: { user_id: userId },
       include: {
@@ -116,6 +127,8 @@ export class UserManagementService {
     });
 
     return {
+      sender_name: sender.name,
+      sender_email: sender.email,
       gifts: gifts.map((gift) => ({
         recipientName: gift.recipient?.name,
         recipientEmail: gift.recipient?.email,
@@ -135,6 +148,7 @@ export class UserManagementService {
   }
 
   async updateUserStatus(userId: string, isActive: boolean) {
+    console.log(userId, isActive);
     await this.prisma.user.update({
       where: { id: userId },
       data: { approved_at: isActive ? new Date() : null },
