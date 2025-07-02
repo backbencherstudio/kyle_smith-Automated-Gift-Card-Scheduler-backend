@@ -11,6 +11,7 @@ import { GiftCardInventoryModule } from './gift-card-inventory/gift-card-invento
 import { InventoryTransactionModule } from './inventory-transaction/inventory-transaction.module';
 import { AdminDashboardModule } from './admin-dashboard/admin-dashboard.module';
 import { UserManagementModule } from './user-management/user-management.module';
+import { GiftLogModule } from './gift-log/gift-log.module';
 
 
 @Module({
@@ -27,6 +28,7 @@ import { UserManagementModule } from './user-management/user-management.module';
     InventoryTransactionModule,
     AdminDashboardModule,
     UserManagementModule,
+    GiftLogModule,
   ],
   controllers: [],
 })

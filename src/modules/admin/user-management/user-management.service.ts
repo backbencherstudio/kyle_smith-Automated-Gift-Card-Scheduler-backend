@@ -115,19 +115,27 @@ export class UserManagementService {
     const safePage = Math.max(1, Number(page) || 1);
     const safeLimit = Math.max(1, Number(limit) || 10);
 
-    // Parse month/year safely
     const now = new Date();
     const parsedMonth = Number(month);
     const parsedYear = Number(year);
 
-    const targetMonth =
-      !isNaN(parsedMonth) && parsedMonth > 0 ? parsedMonth : now.getMonth() + 1;
-    const targetYear =
-      !isNaN(parsedYear) && parsedYear > 0 ? parsedYear : now.getFullYear();
+    // Only filter by month/year if month is a valid month (1-12)
+    let giftWhere: any = { user_id: userId };
+    let targetMonth: number | undefined = undefined;
+    let targetYear: number | undefined = undefined;
 
-    // Calculate start and end of the month
-    const startDate = new Date(targetYear, targetMonth - 1, 1, 0, 0, 0, 0);
-    const endDate = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
+    if (!isNaN(parsedMonth) && parsedMonth > 0 && parsedMonth <= 12) {
+      targetMonth = parsedMonth;
+      targetYear =
+        !isNaN(parsedYear) && parsedYear > 0 ? parsedYear : now.getFullYear();
+      const startDate = new Date(targetYear, targetMonth - 1, 1, 0, 0, 0, 0);
+      const endDate = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
+
+      giftWhere.created_at = {
+        gte: startDate,
+        lte: endDate,
+      };
+    }
 
     // Fetch sender info
     const sender = await this.prisma.user.findUnique({
@@ -138,17 +146,6 @@ export class UserManagementService {
     if (!sender) {
       throw new NotFoundException('User not found');
     }
-
-    // Build where filter for gifts (now using created_at)
-    const giftWhere: any = {
-      user_id: userId,
-      created_at: {
-        gte: startDate,
-        lte: endDate,
-      },
-    };
-
-    console.log(giftWhere);
 
     // Get total count for pagination
     const total = await this.prisma.giftScheduling.count({
@@ -185,15 +182,33 @@ export class UserManagementService {
       limit: safeLimit,
       total,
       totalPages,
+      // Only return month/year if filtered, otherwise undefined
       month: targetMonth,
       year: targetYear,
     };
   }
 
   async deleteUser(userId: string) {
-    // Optionally: delete related data first if not cascading
-    await this.prisma.user.delete({ where: { id: userId } });
-    return { success: true };
+    // First, check if the user exists
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    try {
+      await this.prisma.user.delete({ where: { id: userId } });
+      return { success: true };
+    } catch (error) {
+      // Fallback: handle Prisma P2025 error (record not found)
+      if (error.code === 'P2025') {
+        throw new NotFoundException('User not found');
+      }
+      throw error; // rethrow other errors
+    }
   }
 
   async updateUserStatus(userId: string, isActive: boolean) {

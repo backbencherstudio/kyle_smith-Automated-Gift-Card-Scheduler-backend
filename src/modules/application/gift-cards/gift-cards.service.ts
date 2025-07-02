@@ -367,4 +367,61 @@ export class GiftCardsService {
       return { success: false, message: error.message, trace: error.stack };
     }
   }
+
+  /**
+   * Returns summary counts for the current user:
+   * - totalContacts
+   * - totalUpcomingEvents (birthdays within 30 days)
+   * - totalGiftCardsSent
+   */
+  async getUserGiftCardSummary(userId: string) {
+    // 1. Total contacts
+    const totalContacts = await this.prisma.giftRecipient.count({
+      where: { user_id: userId },
+    });
+
+    // 2. Upcoming events (birthdays within 30 days)
+    const allRecipients = await this.prisma.giftRecipient.findMany({
+      where: { user_id: userId },
+      select: { birthday_date: true },
+    });
+
+    const today = new Date();
+    const totalUpcomingEvents = allRecipients.filter((recipient) => {
+      if (!recipient.birthday_date) return false;
+      // Calculate next birthday
+      const birthday = new Date(recipient.birthday_date);
+      const currentYear = today.getFullYear();
+      let nextBirthday = new Date(
+        currentYear,
+        birthday.getMonth(),
+        birthday.getDate(),
+      );
+      if (nextBirthday < today) {
+        nextBirthday = new Date(
+          currentYear + 1,
+          birthday.getMonth(),
+          birthday.getDate(),
+        );
+      }
+      const daysUntilBirthday = Math.ceil(
+        (nextBirthday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      return daysUntilBirthday <= 30 && daysUntilBirthday >= 0;
+    }).length;
+
+    // 3. Total gift cards sent
+    const totalGiftCardsSent = await this.prisma.giftScheduling.count({
+      where: {
+        user_id: userId,
+        delivery_status: 'SENT',
+      },
+    });
+
+    return {
+      totalContacts,
+      totalUpcomingEvents,
+      totalGiftCardsSent,
+    };
+  }
 }

@@ -1,9 +1,11 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { GiftCardsService } from './gift-cards.service';
 import { FilterGiftCardsDto } from './dto/filter-gift-cards.dto';
 import { BrowseVendorsDto } from './dto/browse-vendors.dto';
+import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 
 @Controller('gift-cards')
+@UseGuards(JwtAuthGuard)
 export class GiftCardsController {
   constructor(private readonly service: GiftCardsService) {}
 
@@ -12,7 +14,6 @@ export class GiftCardsController {
     return this.service.findAll(filter);
   }
 
-  
   @Get('vendors')
   async listVendors() {
     return this.service.listVendors();
@@ -27,7 +28,7 @@ export class GiftCardsController {
   async getVendorDetails(@Param('id') id: string) {
     return this.service.getVendorDetails(id);
   }
-  
+
   @Get('vendors/:id/availability/:amount')
   async checkVendorAvailability(
     @Param('id') vendor_id: string,
@@ -42,11 +43,18 @@ export class GiftCardsController {
     }
     return this.service.checkVendorAvailability(vendor_id, amount);
   }
+
+  @Get('summary')
+  async getUserGiftCardSummary(@Req() req) {
+    const userId = req.user.id;
+    return this.service.getUserGiftCardSummary(userId);
+  }
+  
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.service.findOne(id);
   }
-  
+
   @Get(':id/availability')
   async checkAvailability(@Param('id') id: string) {
     return this.service.checkAvailability(id);

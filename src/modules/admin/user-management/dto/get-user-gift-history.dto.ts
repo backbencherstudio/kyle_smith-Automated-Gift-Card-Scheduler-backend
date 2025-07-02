@@ -17,7 +17,7 @@ export class GetUserGiftHistoryQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(1)
+  @Min(0)
   month?: number;
 
   @IsOptional()
