@@ -15,7 +15,8 @@ import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { Roles } from 'src/common/guard/role/roles.decorator';
 import { Role } from 'src/common/guard/role/role.enum';
 import { ApiOperation, ApiResponse } from '@nestjs/swagger';
-  
+import { GetUserGiftHistoryQueryDto } from './dto/get-user-gift-history.dto';
+
 @Controller('admin/user-management')
 @UseGuards(JwtAuthGuard)
 @Roles(Role.ADMIN)
@@ -38,8 +39,11 @@ export class UserManagementController {
   }
 
   @Get(':userId')
-  async getUserGiftHistory(@Param('userId') userId: string) {
-    return this.userManagementService.getUserGiftHistory(userId);
+  async getUserGiftHistory(
+    @Param('userId') userId: string,
+    @Query() query: GetUserGiftHistoryQueryDto,
+  ) {
+    return this.userManagementService.getUserGiftHistory(userId, query);
   }
 
   @Delete(':userId')

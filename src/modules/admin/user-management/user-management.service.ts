@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { GetUserGiftHistoryQueryDto } from './dto/get-user-gift-history.dto';
 
 @Injectable()
 export class UserManagementService {
@@ -105,7 +106,29 @@ export class UserManagementService {
     };
   }
 
-  async getUserGiftHistory(userId: string) {
+  async getUserGiftHistory(
+    userId: string,
+    query: GetUserGiftHistoryQueryDto = {} as GetUserGiftHistoryQueryDto,
+  ) {
+    const { page = 1, limit = 10, month, year } = query;
+
+    const safePage = Math.max(1, Number(page) || 1);
+    const safeLimit = Math.max(1, Number(limit) || 10);
+
+    // Parse month/year safely
+    const now = new Date();
+    const parsedMonth = Number(month);
+    const parsedYear = Number(year);
+
+    const targetMonth =
+      !isNaN(parsedMonth) && parsedMonth > 0 ? parsedMonth : now.getMonth() + 1;
+    const targetYear =
+      !isNaN(parsedYear) && parsedYear > 0 ? parsedYear : now.getFullYear();
+
+    // Calculate start and end of the month
+    const startDate = new Date(targetYear, targetMonth - 1, 1, 0, 0, 0, 0);
+    const endDate = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
+
     // Fetch sender info
     const sender = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -116,15 +139,35 @@ export class UserManagementService {
       throw new NotFoundException('User not found');
     }
 
-    // Fetch gifts
+    // Build where filter for gifts (now using created_at)
+    const giftWhere: any = {
+      user_id: userId,
+      created_at: {
+        gte: startDate,
+        lte: endDate,
+      },
+    };
+
+    console.log(giftWhere);
+
+    // Get total count for pagination
+    const total = await this.prisma.giftScheduling.count({
+      where: giftWhere,
+    });
+
+    // Fetch paginated gifts
     const gifts = await this.prisma.giftScheduling.findMany({
-      where: { user_id: userId },
+      where: giftWhere,
       include: {
         recipient: true,
         inventory: true,
       },
-      orderBy: { scheduled_date: 'desc' },
+      orderBy: { created_at: 'desc' },
+      skip: (safePage - 1) * safeLimit,
+      take: safeLimit,
     });
+
+    const totalPages = total > 0 ? Math.ceil(total / safeLimit) : 1;
 
     return {
       sender_name: sender.name,
@@ -138,6 +181,12 @@ export class UserManagementService {
         eventDate: gift.scheduled_date.toISOString(),
         status: gift.delivery_status,
       })),
+      page: safePage,
+      limit: safeLimit,
+      total,
+      totalPages,
+      month: targetMonth,
+      year: targetYear,
     };
   }
 

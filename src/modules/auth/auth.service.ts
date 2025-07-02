@@ -22,6 +22,8 @@ export class AuthService {
   ) {}
 
   async me(userId: string) {
+    const userDetails = await UserRepository.getUserDetails(userId);
+
     try {
       const user = await this.prisma.user.findFirst({
         where: {
@@ -48,23 +50,24 @@ export class AuthService {
         };
       }
 
-      if (user.avatar) {
-        user['avatar_url'] = SojebStorage.url(
-          appConfig().storageUrl.avatar + user.avatar,
-        );
+      if (userDetails.first_name && userDetails.last_name) {
+        user.name = `${userDetails.first_name} ${userDetails.last_name}`;
       }
 
-      if (user) {
-        return {
-          success: true,
-          data: user,
-        };
-      } else {
-        return {
-          success: false,
-          message: 'User not found',
-        };
+      if (user.avatar) {
+        if (/^https?:\/\//.test(user.avatar)) {
+          user['avatar_url'] = user.avatar;
+        } else {
+          user['avatar_url'] = SojebStorage.url(
+            appConfig().storageUrl.avatar + user.avatar,
+          );
+        }
       }
+
+      return {
+        success: true,
+        data: user,
+      };
     } catch (error) {
       return {
         success: false,
@@ -965,6 +968,7 @@ export class AuthService {
   // --------- end 2FA ---------
 
   async generateAccessToken(userId: string, email: string): Promise<string> {
-    return this.jwtService.sign({ userId, email });
+    const payload = { email: email, sub: userId };
+    return this.jwtService.sign(payload);
   }
 }
