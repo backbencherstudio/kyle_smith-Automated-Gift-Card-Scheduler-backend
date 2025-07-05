@@ -39,7 +39,7 @@ export class AdminDashboardService {
           _sum: { paid_amount: true },
           where: { status: 'succeeded' },
         }),
-        this.prisma.paymentTransaction.count({ where: { status: 'failed' } }),
+        this.prisma.paymentTransaction.count({ where: { status: 'succeeded' } }),
       ]);
 
     // 2. Chart Data (only verified users)

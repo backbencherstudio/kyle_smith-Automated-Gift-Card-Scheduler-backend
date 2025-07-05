@@ -169,12 +169,19 @@ export class GiftCardInventoryService {
         skip: skip,
         take: currentLimit,
         orderBy: { created_at: 'desc' },
+        include: { vendor: true },
       });
 
-      // Always return pagination format
+      // DECRYPT card codes for admin viewing
+      const decryptedData = data.map((card) => ({
+        ...card,
+        card_code: EncryptionHelper.decrypt(card.card_code),
+        vendor_name: card.vendor?.name,
+      }));
+
       return {
         success: true,
-        data,
+        data: decryptedData,
         total,
         page: currentPage,
         limit: currentLimit,
@@ -189,9 +196,19 @@ export class GiftCardInventoryService {
     try {
       const card = await this.prisma.giftCardInventory.findUnique({
         where: { id },
+        include: { vendor: true },
       });
+
       if (!card) return { success: false, message: 'Gift card not found' };
-      return { success: true, data: card };
+
+      // DECRYPT card code for admin viewing
+      const decryptedCard = {
+        ...card,
+        card_code: EncryptionHelper.decrypt(card.card_code),
+        vendor_name: card.vendor?.name,
+      };
+
+      return { success: true, data: decryptedCard };
     } catch (error) {
       return { success: false, message: error.message, trace: error.stack };
     }
