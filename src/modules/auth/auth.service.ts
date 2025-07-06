@@ -12,6 +12,7 @@ import { SojebStorage } from '../../common/lib/Disk/SojebStorage';
 import { DateHelper } from '../../common/helper/date.helper';
 import { StripePayment } from '../../common/lib/Payment/stripe/StripePayment';
 import { StringHelper } from '../../common/helper/string.helper';
+import { NotificationEvents } from 'src/common/events/notification.events';
 
 @Injectable()
 export class AuthService {
@@ -19,6 +20,7 @@ export class AuthService {
     private jwtService: JwtService,
     private prisma: PrismaService,
     private mailService: MailService,
+    private notificationEvents: NotificationEvents,
   ) {}
 
   async me(userId: string) {
@@ -281,6 +283,11 @@ export class AuthService {
         type: type,
         address: address,
         phone_number: phone_number,
+      });
+      await this.notificationEvents.onUserSignup({
+        id: user.data.id,
+        name: user.data.name,
+        email: user.data.email,
       });
 
       if (user == null && user.success == false) {
