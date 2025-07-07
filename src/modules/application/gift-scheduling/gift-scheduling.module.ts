@@ -23,7 +23,7 @@ import { WalletModule } from 'src/modules/wallet/wallet.module';
   providers: [
     GiftSchedulingService,
     GiftSchedulingMailService,
-    GiftSchedulingMailProcessor,
+    GiftSchedulingMailProcessor,  
     PrismaService,
     BirthdayCalculatorService,
   ],

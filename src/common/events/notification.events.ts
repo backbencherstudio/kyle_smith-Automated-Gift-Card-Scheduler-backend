@@ -37,6 +37,7 @@ export class NotificationEvents {
       type: 'payment_success',
       entity_id: paymentData.transaction_id,
     });
+    console.log(paymentData);
 
     // Notify user
     const userNotification = await NotificationRepository.createNotification({
@@ -225,6 +226,7 @@ export class NotificationEvents {
       receiver_id: giftData.user_id,
       entity_id: giftData.gift_scheduling_id,
     });
+    console.log(notification);
 
     // ✅ SEND TO SPECIFIC USER
     if (this.gateway) {
@@ -260,6 +262,26 @@ export class NotificationEvents {
           created_at: notification.created_at,
           read_at: notification.read_at,
         },
+      });
+    }
+  }
+
+  async onInventoryLow(inventoryData: any) {
+    // Notify admin
+    const adminNotification = await NotificationRepository.createNotification({
+      text: `${inventoryData.vendor_name} $${inventoryData.face_value} gift cards: Only ${inventoryData.current_stock} remaining (Threshold: ${inventoryData.threshold})`,
+      type: inventoryData.notification_type,
+      entity_id: inventoryData.vendor_id,
+    });
+
+    // ✅ SEND REAL-TIME NOTIFICATION TO ALL ADMINS
+    if (this.gateway) {
+      await this.gateway.broadcastToAdmins({
+        id: adminNotification.id,
+        type: adminNotification.notification_event.type,
+        text: adminNotification.notification_event.text,
+        created_at: adminNotification.created_at,
+        read_at: adminNotification.read_at,
       });
     }
   }

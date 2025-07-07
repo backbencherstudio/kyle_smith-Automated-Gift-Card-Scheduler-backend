@@ -55,13 +55,34 @@ export class NotificationService {
    * Get user notifications with pagination
    */
   async getUserNotifications(userId: string, page = 1, limit = 20) {
+    console.log("userId: ", userId)
+    console.log("page: ", page)
+    console.log("limit: ", limit)
     try {
+      // ✅ Ensure page and limit are numbers
+      const pageNumber = typeof page === 'string' ? parseInt(page, 10) : page;
+      const limitNumber =
+        typeof limit === 'string' ? parseInt(limit, 10) : limit;
+
       const result = await NotificationRepository.getUserNotifications(
         userId,
-        page,
-        limit,
+        pageNumber,
+        limitNumber,
       );
-      return { success: true, ...result };
+
+      return {
+        success: true,
+        ...result,
+        // ✅ ADD PAGINATION METADATA
+        pagination: {
+          currentPage: result.page,
+          totalPages: result.totalPages,
+          totalItems: result.total,
+          itemsPerPage: result.limit,
+          hasNextPage: result.hasNextPage,
+          hasPrevPage: result.hasPrevPage,
+        },
+      };
     } catch (error) {
       return { success: false, message: error.message };
     }

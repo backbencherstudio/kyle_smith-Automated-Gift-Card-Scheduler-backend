@@ -4,6 +4,7 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { QueueMonitoringService } from 'src/modules/queue-monitoring/queue-monitoring.service';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { NotificationEvents } from 'src/common/events/notification.events';
 
 @Processor('gift-scheduling-mail-queue')
 export class GiftSchedulingMailProcessor extends WorkerHost {
@@ -13,6 +14,7 @@ export class GiftSchedulingMailProcessor extends WorkerHost {
     private mailerService: MailerService,
     private queueMonitoringService: QueueMonitoringService,
     private prisma: PrismaService,
+    private notificationEvents: NotificationEvents,
   ) {
     super();
   }
@@ -61,12 +63,29 @@ export class GiftSchedulingMailProcessor extends WorkerHost {
             );
             throw new Error('No recipient email provided for gift email job');
           }
+
           await this.mailerService.sendMail({
             to,
             subject,
             template,
             context,
           });
+
+          await this.notificationEvents.onGiftDelivered({
+            user_id: context.user_id,
+            vendor_name: context.vendor_name,
+            recipient_email: to,
+            gift_scheduling_id: context.gift_scheduling_id,
+          });
+
+          await this.prisma.giftScheduling.update({
+            where: { id: context.gift_scheduling_id },
+            data: {
+              delivery_status: 'DELIVERED',
+              sent_at: new Date(),
+            },
+          });
+
           break;
         default:
           this.logger.log('Unknown job name');
@@ -77,6 +96,23 @@ export class GiftSchedulingMailProcessor extends WorkerHost {
         `Error processing job ${job.id} with name ${job.name}`,
         error,
       );
+
+      if (job.name === 'sendGiftEmail') {
+        try {
+          await this.notificationEvents.onGiftDeliveryFailed({
+            user_id: job.data.context.user_id,
+            vendor_name: job.data.context.vendor_name,
+            recipient_email: job.data.to,
+            gift_scheduling_id: job.data.context.gift_scheduling_id,
+          });
+        } catch (notificationError) {
+          this.logger.error(
+            'Failed to send delivery failed notification:',
+            notificationError,
+          );
+        }
+      }
+
       throw error;
     }
   }
@@ -86,7 +122,7 @@ export class GiftSchedulingMailProcessor extends WorkerHost {
     try {
       const { context } = job.data;
       const { is_notify, user_id, gift_scheduling_id } = context;
-      console.log("is notify from processor",is_notify);
+      console.log('is notify from processor', is_notify);
 
       // Only send notification if is_notify is true
       if (is_notify !== false) {

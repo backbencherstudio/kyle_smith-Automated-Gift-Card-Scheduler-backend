@@ -11,6 +11,7 @@ import { GiftSchedulingMailService } from './mail/gift-scheduling-mail.service';
 import { BirthdayCalculatorService } from './birthday-calculator.service';
 import { StripePayment } from 'src/common/lib/Payment/stripe/StripePayment';
 import dayjs from 'dayjs';
+import { NotificationEvents } from 'src/common/events/notification.events';
 
 @Injectable()
 export class GiftSchedulingService {
@@ -18,6 +19,7 @@ export class GiftSchedulingService {
     private readonly prisma: PrismaService,
     private readonly giftSchedulingMailService: GiftSchedulingMailService,
     private readonly birthdayCalculator: BirthdayCalculatorService,
+    private readonly notificationEvents: NotificationEvents,
   ) {}
 
   /**
@@ -28,7 +30,10 @@ export class GiftSchedulingService {
     user_id: string,
     payment_method_id: string,
   ) {
-    return await this.prisma.$transaction(async (tx) => {
+    // ✅ MOVE NOTIFICATIONS OUTSIDE TRANSACTION
+    let notificationData = null;
+
+    const result = await this.prisma.$transaction(async (tx) => {
       try {
         // 1. Validate input data
         const validationResult = await this.validateGiftSchedulingData(
@@ -99,7 +104,20 @@ export class GiftSchedulingService {
           tx,
         });
 
-        // ✅ SIMPLIFIED: Return only essential data
+        console.log('clicked 104');
+        // ✅ STORE DATA FOR NOTIFICATION (don't call yet)
+        notificationData = {
+          user_id: user_id,
+          user_name: user.name || user.email,
+          delivery_date: sendGiftDate.format('YYYY-MM-DD'),
+          gift_scheduling_id: scheduleResult.data.schedule_id,
+          amount: card.selling_price,
+          transaction_id: paymentResult.data.payment_intent_id,
+          payment_success: paymentResult.success,
+        };
+
+        console.log('notification data: ', notificationData);
+
         return {
           success: true,
           message: 'Gift scheduled successfully',
@@ -115,16 +133,52 @@ export class GiftSchedulingService {
           },
         };
       } catch (error) {
-        return {
-          success: false,
-          message: error.message,
-          details: {
-            vendor_id: createDto.vendor_id,
-            requested_amount: createDto.amount,
-          },
+        // ✅ STORE FAILURE DATA FOR NOTIFICATION
+        notificationData = {
+          user_id: user_id,
+          user_name: 'User',
+          amount: createDto.amount,
+          transaction_id: 'failed',
+          payment_success: false,
         };
+
+        throw error;
       }
     });
+
+    // ✅ SEND NOTIFICATIONS AFTER TRANSACTION SUCCESS
+    if (notificationData) {
+      try {
+        if (notificationData.payment_success) {
+          // ✅ SEND SUCCESS NOTIFICATIONS
+          await this.notificationEvents.onGiftScheduled({
+            user_id: notificationData.user_id,
+            delivery_date: notificationData.delivery_date,
+            gift_scheduling_id: notificationData.gift_scheduling_id,
+          });
+
+          await this.notificationEvents.onPaymentSuccess({
+            user_id: notificationData.user_id,
+            user_name: notificationData.user_name,
+            amount: notificationData.amount,
+            transaction_id: notificationData.transaction_id,
+          });
+        } else {
+          // ✅ SEND FAILURE NOTIFICATION
+          await this.notificationEvents.onPaymentFailed({
+            user_id: notificationData.user_id,
+            user_name: notificationData.user_name,
+            amount: notificationData.amount,
+            transaction_id: notificationData.transaction_id,
+          });
+        }
+      } catch (notificationError) {
+        console.error('Notification error:', notificationError);
+        // Don't fail the main operation if notification fails
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -324,16 +378,58 @@ export class GiftSchedulingService {
       const result = await tx.giftCardInventory.updateMany({
         where: {
           id: cardId,
-          status: 'RESERVED', // Only mark as sold if currently reserved
+          status: 'RESERVED',
         },
         data: { status: 'USED' },
       });
 
       if (result.count > 0) {
         console.log(`Card ${cardId} marked as sold`);
+
+        // ✅ CHECK INVENTORY LEVELS AFTER SALE
+        // Note: This should be done outside transaction to avoid blocking
+        this.checkInventoryAfterSale(cardId);
       }
     } catch (error) {
       console.error('Failed to mark inventory as sold:', error);
+    }
+  }
+
+  private async checkInventoryAfterSale(cardId: string) {
+    try {
+      // Get card details
+      const card = await this.prisma.giftCardInventory.findUnique({
+        where: { id: cardId },
+        include: { vendor: true },
+      });
+
+      if (card) {
+        // Check remaining inventory for this vendor + face value
+        const remainingCount = await this.prisma.giftCardInventory.count({
+          where: {
+            vendor_id: card.vendor_id,
+            face_value: card.face_value,
+            status: 'AVAILABLE',
+          },
+        });
+
+        // Trigger low inventory check
+        await this.notificationEvents.onInventoryLow({
+          vendor_id: card.vendor_id,
+          vendor_name: card.vendor.name,
+          face_value: card.face_value,
+          current_stock: remainingCount,
+          threshold: remainingCount <= 2 ? 2 : remainingCount <= 5 ? 5 : 10,
+          notification_type:
+            remainingCount <= 2
+              ? 'inventory_critical'
+              : remainingCount <= 5
+                ? 'inventory_low'
+                : 'inventory_warning',
+        });
+      }
+    } catch (error) {
+      console.error('Error checking inventory after sale:', error);
     }
   }
 
@@ -379,9 +475,21 @@ export class GiftSchedulingService {
         },
       });
 
+      // ✅ STORE FAILURE DATA FOR NOTIFICATION
+      const failureData = {
+        user_id: paymentResult.metadata?.user_id || 'unknown',
+        user_name: 'User', // Will be updated outside transaction
+        amount: card.selling_price,
+        transaction_id: paymentResult.data?.payment_intent_id || 'unknown',
+      };
+
       return {
         success: false,
-        message: `Payment failed: ${paymentResult.message}`,
+        message: paymentResult.message,
+        error_code: paymentResult.error_code,
+        requires_action: paymentResult.data?.requires_action,
+        client_secret: paymentResult.data?.client_secret,
+        notificationData: failureData, // ✅ PASS DATA OUTSIDE
       };
     } catch (error) {
       console.error('Error handling payment failure:', error);
@@ -558,6 +666,14 @@ export class GiftSchedulingService {
         delay: delay,
         is_notify: schedule.is_notify,
       });
+
+      // // ✅ ADD NOTIFICATION TRIGGER HERE
+      // await this.notificationEvents.onGiftDelivered({
+      //   user_id: user_id,
+      //   vendor_name: card.vendor.name,
+      //   recipient_email: recipient.email,
+      //   gift_scheduling_id: schedule.id,
+      // });
 
       return {
         success: true,

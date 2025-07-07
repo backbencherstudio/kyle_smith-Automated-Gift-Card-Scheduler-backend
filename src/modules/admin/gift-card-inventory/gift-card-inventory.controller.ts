@@ -19,11 +19,15 @@ import { FilterGiftCardInventoryDto } from './dto/filter-gift-card-inventory.dto
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
+import { InventoryMonitorService } from './inventory-monitor.service';
 
 @Controller('admin/gift-card-inventory')
 @UseGuards(JwtAuthGuard)
 export class GiftCardInventoryController {
-  constructor(private readonly service: GiftCardInventoryService) {}
+  constructor(
+    private readonly service: GiftCardInventoryService,
+    private readonly inventoryMonitorService: InventoryMonitorService,
+  ) {}
 
   @Post()
   async create(@Body() dto: CreateGiftCardInventoryDto, @Req() req) {
@@ -80,5 +84,21 @@ export class GiftCardInventoryController {
   @Delete(':id')
   async remove(@Param('id') id: string) {
     return this.service.remove(id);
+  }
+
+  @Post('check-inventory-levels')
+  async checkInventoryLevels() {
+    return this.inventoryMonitorService.checkInventoryLevels();
+  }
+
+  @Post('check-vendor-inventory/:vendorId/:faceValue')
+  async checkVendorInventory(
+    @Param('vendorId') vendorId: string,
+    @Param('faceValue') faceValue: string,
+  ) {
+    return this.inventoryMonitorService.checkVendorInventory(
+      vendorId,
+      Number(faceValue),
+    );
   }
 }

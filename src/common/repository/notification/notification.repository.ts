@@ -123,7 +123,19 @@ export class NotificationRepository {
         }),
       ]);
 
-      return { notifications, total, page, limit };
+      console.log("notifications: ", notifications)
+
+      const totalPages = Math.ceil(total / limit);
+
+      return {
+        notifications,
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      };
     } catch (error) {
       console.error('Error getting user notifications:', error);
       throw error;
@@ -166,6 +178,8 @@ export class NotificationRepository {
    * Delete notification
    */
   static async deleteNotification(notificationId: string, userId: string) {
+    console.log("notificationId: ", notificationId)
+    console.log("userId: ", userId)
     try {
       return await prisma.notification.deleteMany({
         where: { id: notificationId, receiver_id: userId },
@@ -175,6 +189,7 @@ export class NotificationRepository {
       throw error;
     }
   }
+
 
   /**
    * Delete all notifications for user
