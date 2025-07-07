@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { UpdateNotificationDto } from './dto/update-notification.dto';
 import { NotificationRepository } from 'src/common/repository/notification/notification.repository';
+import { UserRepository } from 'src/common/repository/user/user.repository';
 
 // ✅ Define the allowed notification types
 type NotificationType =
@@ -55,19 +56,24 @@ export class NotificationService {
    * Get user notifications with pagination
    */
   async getUserNotifications(userId: string, page = 1, limit = 20) {
-    console.log("userId: ", userId)
-    console.log("page: ", page)
-    console.log("limit: ", limit)
+    console.log('userId: ', userId);
+    console.log('page: ', page);
+    console.log('limit: ', limit);
     try {
       // ✅ Ensure page and limit are numbers
       const pageNumber = typeof page === 'string' ? parseInt(page, 10) : page;
       const limitNumber =
         typeof limit === 'string' ? parseInt(limit, 10) : limit;
 
+      // ✅ Get user details to determine type
+      const userDetails = await UserRepository.getUserDetails(userId);
+      const userType = userDetails?.type || 'user';
+
       const result = await NotificationRepository.getUserNotifications(
         userId,
         pageNumber,
         limitNumber,
+        userType, // Pass user type
       );
 
       return {
@@ -149,7 +155,14 @@ export class NotificationService {
    */
   async getUnreadCount(userId: string) {
     try {
-      const count = await NotificationRepository.getUnreadCount(userId);
+      // ✅ Get user details to determine type
+      const userDetails = await UserRepository.getUserDetails(userId);
+      const userType = userDetails?.type || 'user';
+
+      const count = await NotificationRepository.getUnreadCount(
+        userId,
+        userType,
+      );
       return { success: true, count };
     } catch (error) {
       return { success: false, message: error.message };
@@ -161,7 +174,15 @@ export class NotificationService {
    */
   async remove(notificationId: string, userId: string) {
     try {
-      await NotificationRepository.deleteNotification(notificationId, userId);
+      // ✅ Get user details to determine type
+      const userDetails = await UserRepository.getUserDetails(userId);
+      const userType = userDetails?.type || 'user';
+
+      await NotificationRepository.deleteNotification(
+        notificationId,
+        userId,
+        userType,
+      );
       return { success: true, message: 'Notification deleted successfully' };
     } catch (error) {
       return { success: false, message: error.message };
@@ -173,7 +194,11 @@ export class NotificationService {
    */
   async removeAll(userId: string) {
     try {
-      await NotificationRepository.deleteAllNotifications(userId);
+      // ✅ Get user details to determine type
+      const userDetails = await UserRepository.getUserDetails(userId);
+      const userType = userDetails?.type || 'user';
+
+      await NotificationRepository.deleteAllNotifications(userId, userType);
       return {
         success: true,
         message: 'All notifications deleted successfully',

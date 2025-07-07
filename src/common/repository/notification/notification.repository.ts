@@ -101,16 +101,38 @@ export class NotificationRepository {
   /**
    * Get user notifications with pagination
    */
-  static async getUserNotifications(userId: string, page = 1, limit = 20) {
+  static async getUserNotifications(
+    userId: string,
+    page = 1,
+    limit = 20,
+    userType?: string,
+  ) {
     try {
       const skip = (page - 1) * limit;
 
+      // Build where condition based on user type
+      let where: any = { receiver_id: userId };
+
+      // If user is admin or su_admin, fetch both their own and global admin notifications
+      if (userType === 'admin' || userType === 'su_admin') {
+        where = {
+          OR: [
+            { receiver_id: userId },
+            { receiver_id: 'admin' },
+            { receiver_id: null }, // Also include notifications with no specific receiver (global)
+          ],
+        };
+      }
+
       const [notifications, total] = await Promise.all([
         prisma.notification.findMany({
-          where: { receiver_id: userId },
+          where,
           include: {
             notification_event: true,
             sender: {
+              select: { id: true, name: true, email: true, avatar: true },
+            },
+            receiver: {
               select: { id: true, name: true, email: true, avatar: true },
             },
           },
@@ -118,12 +140,10 @@ export class NotificationRepository {
           skip,
           take: limit,
         }),
-        prisma.notification.count({
-          where: { receiver_id: userId },
-        }),
+        prisma.notification.count({ where }),
       ]);
 
-      console.log("notifications: ", notifications)
+      // console.log('notifications: ', notifications);
 
       const totalPages = Math.ceil(total / limit);
 
@@ -160,14 +180,26 @@ export class NotificationRepository {
   /**
    * Get unread count for user
    */
-  static async getUnreadCount(userId: string) {
+  static async getUnreadCount(userId: string, userType?: string) {
     try {
-      return await prisma.notification.count({
-        where: {
-          receiver_id: userId,
-          read_at: null,
-        },
-      });
+      // Build where condition based on user type (same logic as getUserNotifications)
+      let where: any = {
+        receiver_id: userId,
+        read_at: null,
+      };
+
+      // If user is admin or su_admin, count both their own and global admin notifications
+      if (userType === 'admin' || userType === 'su_admin') {
+        where = {
+          OR: [
+            { receiver_id: userId, read_at: null },
+            { receiver_id: 'admin', read_at: null },
+            { receiver_id: null, read_at: null },
+          ],
+        };
+      }
+
+      return await prisma.notification.count({ where });
     } catch (error) {
       console.error('Error getting unread count:', error);
       throw error;
@@ -177,28 +209,61 @@ export class NotificationRepository {
   /**
    * Delete notification
    */
-  static async deleteNotification(notificationId: string, userId: string) {
-    console.log("notificationId: ", notificationId)
-    console.log("userId: ", userId)
+  static async deleteNotification(
+    notificationId: string,
+    userId: string,
+    userType?: string,
+  ) {
+    console.log('notificationId: ', notificationId);
+    console.log('userId: ', userId);
+    console.log('userType: ', userType);
+
     try {
-      return await prisma.notification.deleteMany({
-        where: { id: notificationId, receiver_id: userId },
-      });
+      // Build where condition based on user type
+      let where: any = {
+        id: notificationId,
+        receiver_id: userId,
+      };
+
+      // If user is admin or su_admin, allow deletion of admin/system notifications
+      if (userType === 'admin' || userType === 'su_admin') {
+        where = {
+          id: notificationId,
+          OR: [
+            { receiver_id: userId },
+            { receiver_id: 'admin' },
+            { receiver_id: null },
+          ],
+        };
+      }
+
+      return await prisma.notification.deleteMany({ where });
     } catch (error) {
       console.error('Error deleting notification:', error);
       throw error;
     }
   }
 
-
   /**
    * Delete all notifications for user
    */
-  static async deleteAllNotifications(userId: string) {
+  static async deleteAllNotifications(userId: string, userType?: string) {
     try {
-      return await prisma.notification.deleteMany({
-        where: { receiver_id: userId },
-      });
+      // Build where condition based on user type
+      let where: any = { receiver_id: userId };
+
+      // If user is admin or su_admin, delete all their accessible notifications
+      if (userType === 'admin' || userType === 'su_admin') {
+        where = {
+          OR: [
+            { receiver_id: userId },
+            { receiver_id: 'admin' },
+            { receiver_id: null },
+          ],
+        };
+      }
+
+      return await prisma.notification.deleteMany({ where });
     } catch (error) {
       console.error('Error deleting all notifications:', error);
       throw error;
