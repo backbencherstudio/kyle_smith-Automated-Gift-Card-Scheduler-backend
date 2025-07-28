@@ -22,7 +22,8 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
   'https://kzmp1lbamr3ub2abo3ep.lite.vusercontent.net',
   'https://*.vusercontent.net',
   'https://*.vercel.app',
-  'https://major-watch-folders-bhutan.trycloudflare.com',
+  'https://hamburg-mighty-criterion-winners.trycloudflare.com',
+  'https://timelygifts.shop',
 ];
 
 async function bootstrap() {
@@ -133,5 +134,3 @@ async function bootstrap() {
   await app.listen(process.env.PORT ?? 4000, '0.0.0.0');
 }
 bootstrap();
-
-
