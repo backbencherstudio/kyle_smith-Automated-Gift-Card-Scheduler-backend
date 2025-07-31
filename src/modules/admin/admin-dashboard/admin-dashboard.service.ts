@@ -39,7 +39,9 @@ export class AdminDashboardService {
           _sum: { paid_amount: true },
           where: { status: 'succeeded' },
         }),
-        this.prisma.paymentTransaction.count({ where: { status: 'succeeded' } }),
+        this.prisma.paymentTransaction.count({
+          where: { status: 'succeeded' },
+        }),
       ]);
 
     // 2. Chart Data (only verified users)
@@ -107,29 +109,38 @@ export class AdminDashboardService {
 
   // Helper: Weekly chart (Sat–Fri)
   async getWeeklyUserChart(): Promise<ChartDataPoint[]> {
-    const weekDays = ['Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-    const startOfWeek = dayjs().startOf('week');
-    const endOfWeek = dayjs().endOf('week');
-    const users = await this.prisma.user.findMany({
-      where: {
-        created_at: {
-          gte: startOfWeek.toDate(),
-          lte: endOfWeek.toDate(),
+    try {
+      const weekDays = ['Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+      const startOfWeek = dayjs().startOf('week');
+      const endOfWeek = dayjs().endOf('week');
+      const users = await this.prisma.user.findMany({
+        where: {
+          created_at: {
+            gte: startOfWeek.toDate(),
+            lte: endOfWeek.toDate(),
+          },
+          deleted_at: null,
+          email_verified_at: { not: null },
         },
-        deleted_at: null,
-        email_verified_at: { not: null },
-      },
-      select: { created_at: true },
-    });
-    const counts: Record<string, number> = {};
-    users.forEach((u) => {
-      const day = dayjs(u.created_at).format('ddd');
-      counts[day] = (counts[day] || 0) + 1;
-    });
-    return weekDays.map((label) => ({
-      label,
-      users: counts[label] || 0,
-    }));
+        select: { created_at: true },
+      });
+      const counts: Record<string, number> = {};
+      users.forEach((u) => {
+        const day = dayjs(u.created_at).format('ddd');
+        counts[day] = (counts[day] || 0) + 1;
+      });
+      return weekDays.map((label) => ({
+        label,
+        users: counts[label] || 0,
+      }));
+    } catch (error) {
+      console.error('Error in getWeeklyUserChart:', error);
+      // Return empty chart data instead of throwing
+      return ['Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((label) => ({
+        label,
+        users: 0,
+      }));
+    }
   }
 
   // Helper: Monthly chart (Day 1–30/31)
